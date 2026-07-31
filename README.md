@@ -120,8 +120,26 @@ dashboard/
   Schema, dashboard toggle, and queries already handle it.
 - **Politeness**: the scraper waits 1.5s between requests and runs once a
   day. A full two-level, 17-season backfill takes a few minutes by design.
-- **Team colors**: red `#b3121f`, black, paper-white (gray as support).
-  Charts use red for NorthWood and a dashed neutral ink line for opponents;
+- **Team colors are sampled, not guessed**: red `#ba0513`, black `#040404`,
+  white `#fefefe`, grays `#dedede` / `#949494`, all taken off NorthWood's
+  printed Back-to-School Hub sheet. Every neutral on that sheet measures
+  R-B = 0, so the dashboard's neutrals carry no warm or cool cast either.
+  Two values are intentionally off-sample for legibility on a backlit
+  screen — body text sits at `#0d0d0d` rather than pure black, and
+  text-bearing gray at `#5e5e5e`, because the sheet's mid gray is a
+  halftone value that only reaches 2.9:1 on white. All of it lives in
+  `app/globals.css` as tokens; the night edition restates the same
+  palette and nothing else needs to know which edition is rendering.
+- **Type**: Barlow Condensed for headings (standing in for the condensed
+  grotesque the school sets its headlines in), IBM Plex Mono for every
+  stat, date and axis label, Manrope for UI text, Kaushan Script for the
+  motto in the footer.
+- Charts use red for NorthWood and a dashed neutral line for opponents;
   win/loss/tie marks always carry a letter, never color alone.
+- **Contrast is checked, not assumed**: every rendered text node on all
+  four pages is measured against its computed background in both
+  editions — 702 nodes each, all at or above 4.5:1 (3:1 for large
+  display type and chart marks). Worth re-running after palette edits.
 - The real crest isn't bundled — drop it into `dashboard/public/` and swap
-  it into `components/TopBar.tsx` if you want it in the masthead.
+  it into `components/TopBar.tsx` if you want it in the masthead. The
+  panther head and paw from the school's sheet would be the ones to use.

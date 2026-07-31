@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource-variable/fraunces/opsz.css";
-import "@fontsource-variable/fraunces";
+import "@fontsource/barlow-condensed/500.css";
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
 import "@fontsource-variable/manrope";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
+import "@fontsource/kaushan-script/400.css";
 import "./globals.css";
 import TopBar from "@/components/TopBar";
 
@@ -38,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="shell" id="main">{children}</main>
         <footer className="shell" style={{ paddingTop: 0 }}>
           <div className="footer">
+            <span className="motto">Tradition of Excellence</span>
             <span>NorthWood Panthers · Girls Soccer · Northern Lakes Conference</span>
             <span>Data scraped nightly from MaxPreps</span>
           </div>

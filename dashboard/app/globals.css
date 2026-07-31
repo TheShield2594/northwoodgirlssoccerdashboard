@@ -82,6 +82,9 @@
   --on-win: #ffffff;
   --on-loss: #ffffff;
   --on-tie: #ffffff;
+  /* secondary text on a red fill (the panel header bars) — has to flip
+     with the fill, since the red itself is dark here and bright at night */
+  --on-red-dim: #ffdcde;
 
   /* focus ring: red outline separated from the element by a light halo,
      so it stays visible on white AND on the black-filled controls */
@@ -90,9 +93,12 @@
 
   --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%230d0d0d' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
 
-  --font-display: "Fraunces Variable", "Georgia", serif;
+  /* Barlow Condensed stands in for the condensed grotesque the school
+     sets its headlines in; Kaushan Script for the brush motto. */
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --font-ui: "Manrope Variable", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-script: "Kaushan Script", cursive;
 }
 
 /* ------------------------------------------------------ night edition */
@@ -151,6 +157,7 @@
     --on-win: #1a0f0e;   /* dark type on the brighter dark-mode fills */
     --on-loss: #0d0d0d;
     --on-tie: #0d0d0d;
+    --on-red-dim: #3d1a1e;
 
     --focus: #ff858e;
     --focus-halo: #0d0d0d;
@@ -182,14 +189,9 @@ body {
   font-family: var(--font-ui);
   font-size: 15px;
   line-height: 1.45;
-  /* faint ruled-paper texture, almanac feel */
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent 0,
-    transparent 31px,
-    var(--texture) 31px,
-    var(--texture) 32px
-  );
+  /* faint halftone dot field, echoing the print sheet's screened grounds */
+  background-image: radial-gradient(var(--texture) 1px, transparent 1.2px);
+  background-size: 13px 13px;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -249,12 +251,13 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 .wordmark .nw {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.35rem;
-  letter-spacing: 0.01em;
+  font-size: 1.62rem;
+  letter-spacing: 0.005em;
   color: var(--mast-fg);
   white-space: nowrap;
+  text-transform: uppercase;
 }
-.wordmark .nw em { font-style: italic; color: var(--mast-accent); }
+.wordmark .nw em { font-style: normal; color: var(--mast-accent); }
 .wordmark .tag {
   font-family: var(--font-mono);
   font-size: 0.66rem;
@@ -306,12 +309,12 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 }
 .page-head h1 {
   font-family: var(--font-display);
-  font-size: 2.1rem;
-  font-weight: 640;
-  font-variation-settings: "opsz" 60;
-  letter-spacing: -0.015em;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
   margin: 0;
-  line-height: 1.05;
+  line-height: 1.0;
 }
 .page-head .kicker {
   font-family: var(--font-mono);
@@ -330,25 +333,33 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 .card {
   background: var(--card);
   border: 1px solid var(--hair);
-  border-radius: 8px;
+  border-radius: 12px;
   position: relative;
 }
-/* signature detail: double rule (ink over red) across card tops */
-.card.ruled { border-top: none; border-radius: 0 0 8px 8px; }
+
+/* The print sheet runs two panel treatments, and so do we: primary
+   panels get a solid red header bar with white caps; secondary ones get
+   caps over a red rule. `.ruled` marks the primary cards. */
+.card.ruled { border-top: none; }
 .card.ruled::before {
   content: "";
   display: block;
-  height: 5px;
-  background: linear-gradient(
-    to bottom,
-    var(--ink) 0,
-    var(--ink) 2px,
-    transparent 2px,
-    transparent 3px,
-    var(--red) 3px,
-    var(--red) 5px
-  );
+  height: 6px;
+  background: var(--red);
+  border-radius: 11px 11px 0 0;
 }
+/* when a primary card has a header, the header IS the red bar */
+.card.ruled:has(.card-head)::before { display: none; }
+.card.ruled .card-head {
+  background: var(--red);
+  padding: 9px 18px;
+  align-items: center;
+  border-radius: 11px 11px 0 0;
+}
+.card.ruled .card-head h2 { color: var(--on-win); }
+.card.ruled .card-head .note { color: var(--on-red-dim); }
+.card.ruled .card-head .head-link { color: var(--on-win); text-decoration: underline; }
+.card.ruled .card-head .head-link:hover { color: var(--on-red-dim); }
 
 .card-head {
   display: flex;
@@ -359,14 +370,26 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 }
 .card-head h2 {
   font-family: var(--font-display);
-  font-size: 1.06rem;
-  font-weight: 620;
+  font-size: 1.16rem;
+  font-weight: 700;
   margin: 0;
-  letter-spacing: -0.005em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.15;
 }
 .card-head .note {
   font-size: 0.75rem;
   color: var(--muted);
+}
+.head-link { color: var(--red-deep); font-weight: 700; }
+
+/* secondary panels: caps head sitting on a red rule */
+.card:not(.ruled) > .card-head {
+  padding-bottom: 9px;
+  border-bottom: 2px solid var(--red);
+  margin: 0 20px 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 .card-body { padding: 14px 20px 18px; }
 
@@ -380,7 +403,7 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 .tile {
   background: var(--card);
   border: 1px solid var(--hair);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 14px 16px 12px;
 }
 .tile .t-label {
@@ -716,15 +739,23 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 /* ---------------------------------------------------------- footer */
 
 .footer {
-  border-top: 1px solid var(--hair);
+  border-top: 2px solid var(--red);
   margin-top: 40px;
   padding-top: 16px;
   font-size: 0.72rem;
   color: var(--muted);
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+/* the school's motto, set the way the school sets it */
+.footer .motto {
+  font-family: var(--font-script);
+  font-size: 1.15rem;
+  color: var(--red);
+  line-height: 1;
 }
 
 /* ------------------------------------------------- motion preference */
