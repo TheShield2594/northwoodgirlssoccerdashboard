@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseSchedulePage, normalizeDate, resolveGameDate } from "../src/parse/schedule.js";
 import { parseRosterPage } from "../src/parse/roster.js";
 import { parseStatsPage, parseTablesFromDom } from "../src/parse/stats.js";
+import { parseBoxScorePage } from "../src/parse/boxscore.js";
 
 const fixture = (name: string) => readFileSync(join(__dirname, "fixtures", name), "utf8");
 
@@ -123,6 +124,48 @@ describe("stats table parser (DOM)", () => {
   it("filters to the named team's tables when a hint is given", () => {
     const filtered = parseTablesFromDom(fixture("stats-dom.html"), "SomeOtherSchool");
     expect(filtered.lines).toHaveLength(0);
+  });
+
+  it("keeps tables when the hint matches, case-insensitively", () => {
+    const matched = parseTablesFromDom(fixture("stats-dom.html"), "NORTHWOOD");
+    expect(matched.lines.length).toBeGreaterThan(0);
+  });
+});
+
+describe("box score parser — __NEXT_DATA__ layer", () => {
+  const result = parseBoxScorePage(fixture("boxscore-nextdata.html"), "NorthWood");
+
+  it("returns only our team's players, not the opponent's", () => {
+    expect(result.source).toBe("nextdata");
+    expect(result.lines.map((l) => l.playerName).sort()).toEqual([
+      "Avery Miller",
+      "Kai Bennett",
+      "Quinn Roswell",
+    ]);
+  });
+
+  it("maps JSON stat fields for field players and keepers", () => {
+    const avery = result.lines.find((l) => l.playerName === "Avery Miller")!;
+    expect(avery.stats.goals).toBe(2);
+    expect(avery.stats.shots).toBe(5);
+    const quinn = result.lines.find((l) => l.playerName === "Quinn Roswell")!;
+    expect(quinn.stats.saves).toBe(6);
+    expect(quinn.stats.goals_against).toBe(1);
+  });
+});
+
+describe("box score parser — DOM fallback layer", () => {
+  const result = parseBoxScorePage(fixture("boxscore-dom.html"), "NorthWood");
+
+  it("parses only the section belonging to our team", () => {
+    expect(result.source).toBe("dom");
+    expect(result.lines.map((l) => l.playerName).sort()).toEqual(["Avery Miller", "Kai Bennett"]);
+  });
+
+  it("keeps jersey numbers and skips the Totals row", () => {
+    const avery = result.lines.find((l) => l.playerName === "Avery Miller")!;
+    expect(avery.jerseyNumber).toBe("9");
+    expect(avery.stats.goals).toBe(2);
   });
 });
 

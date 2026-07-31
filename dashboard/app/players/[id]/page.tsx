@@ -2,7 +2,7 @@ import Link from "next/link";
 import DemoBanner from "@/components/DemoBanner";
 import Sparkline from "@/components/charts/Sparkline";
 import { getPlayerDetail, listSeasons } from "@/lib/data";
-import { resolveSelection } from "@/lib/derive";
+import { isGoalkeeper, resolveSelection } from "@/lib/derive";
 import { fmtDateYear, levelLabel, withParams } from "@/lib/format";
 import { STAT_LABELS } from "@/lib/types";
 
@@ -17,7 +17,12 @@ export default async function PlayerPage({
 }) {
   const { seasons, demo } = await listSeasons();
   const { level, season } = resolveSelection(seasons, searchParams);
-  const { player } = await getPlayerDetail(Number(params.id));
+
+  // Only well-formed numeric ids ever reach the data layer.
+  const playerId = /^\d+$/.test(params.id) ? Number(params.id) : null;
+  const { player } = playerId !== null
+    ? await getPlayerDetail(playerId)
+    : { player: null };
 
   if (!player) {
     return (
@@ -32,14 +37,14 @@ export default async function PlayerPage({
     player.seasons.find((s) => s.seasonSlug === season && s.level === level) ??
     player.seasons[player.seasons.length - 1];
 
-  // Career totals across seasons (same level preferred, else all)
+  // Career totals: every season summed, both levels included.
   const careerStats: Record<string, number> = {};
   for (const s of player.seasons) {
     for (const [k, v] of Object.entries(s.stats)) {
-      careerStats[k] = (careerStats[k] ?? 0) + v;
+      careerStats[k] = (careerStats[k] ?? 0) + (v ?? 0);
     }
   }
-  const isKeeper = (careerStats.saves ?? 0) > 0 && (careerStats.goals ?? 0) === 0;
+  const isKeeper = isGoalkeeper(current?.position, careerStats);
 
   const heroKeys = isKeeper
     ? ["games_played", "saves", "goals_against", "shutouts"]
@@ -84,7 +89,7 @@ export default async function PlayerPage({
         <div className="tile-row">
           {heroKeys.map((k, i) => (
             <div key={k} className={`tile ${i === 1 ? "accent" : ""}`}>
-              <div className="t-label">Career {(STAT_LABELS[k] ?? k).toLowerCase() === k ? k.replace(/_/g, " ") : STAT_LABELS[k]}</div>
+              <div className="t-label">Career {STAT_LABELS[k] ?? k.replace(/_/g, " ")}</div>
               <div className="t-value">{careerStats[k] ?? 0}</div>
               <div className="t-sub">{player.seasons.length} season{player.seasons.length === 1 ? "" : "s"} on record</div>
             </div>

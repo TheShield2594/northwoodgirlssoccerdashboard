@@ -38,7 +38,14 @@ export default async function HistoryPage({
     b: s.goalsAgainst,
   }));
 
-  const best = [...levelSeasons].sort((a, b) => winPct(b) - winPct(a))[0];
+  // Best season by win% — but only among meaningful samples, so a 1-0
+  // season can't outrank a full 14-3 one. Fall back to all seasons if no
+  // season reaches the floor.
+  const MIN_GAMES = 5;
+  const bestPool = levelSeasons.filter((s) => s.gamesPlayed >= MIN_GAMES);
+  const best = [...(bestPool.length > 0 ? bestPool : levelSeasons)].sort(
+    (a, b) => winPct(b) - winPct(a) || b.gamesPlayed - a.gamesPlayed
+  )[0];
   const totalW = levelSeasons.reduce((s, x) => s + x.wins, 0);
   const totalL = levelSeasons.reduce((s, x) => s + x.losses, 0);
   const totalT = levelSeasons.reduce((s, x) => s + x.ties, 0);

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/fraunces/opsz.css";
 import "@fontsource-variable/fraunces";
 import "@fontsource-variable/manrope";
 import "@fontsource/ibm-plex-mono/500.css";

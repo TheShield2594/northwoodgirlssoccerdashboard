@@ -5,6 +5,7 @@
  * losses ink) with a 2px surface gap between segments, hover tooltip,
  * and a season label under each column.
  */
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export interface SeasonColumn {
@@ -21,6 +22,7 @@ const H = 240;
 const PAD = { top: 18, right: 12, bottom: 26, left: 30 };
 
 export default function RecordStack({ columns, ariaLabel }: { columns: SeasonColumn[]; ariaLabel: string }) {
+  const router = useRouter();
   const [hover, setHover] = useState<number | null>(null);
   if (columns.length === 0) return null;
 
@@ -32,7 +34,7 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
   const x = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
   const hScale = innerH / maxTotal;
 
-  const yTicks = [0, Math.round(maxTotal / 2), maxTotal];
+  const yTicks = [...new Set([0, Math.round(maxTotal / 2), maxTotal])];
   const hp = hover !== null ? columns[hover] : null;
 
   return (
@@ -54,8 +56,20 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
           let yCursor = H - PAD.bottom;
           const dim = hover !== null && hover !== i;
           return (
-            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: c.href ? "pointer" : "default" }}
-               onClick={() => { if (c.href) window.location.href = c.href; }}>
+            <g key={i}
+               onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
+               onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+               style={{ cursor: c.href ? "pointer" : "default" }}
+               tabIndex={c.href ? 0 : undefined}
+               role={c.href ? "link" : undefined}
+               aria-label={c.href ? `${c.title}: ${c.wins} wins, ${c.losses} losses, ${c.ties} ties` : undefined}
+               onClick={() => { if (c.href) router.push(c.href); }}
+               onKeyDown={(e) => {
+                 if (c.href && (e.key === "Enter" || e.key === " ")) {
+                   e.preventDefault();
+                   router.push(c.href);
+                 }
+               }}>
               <rect x={PAD.left + i * slot} y={PAD.top} width={slot} height={innerH} fill="transparent" />
               {segs.map((s, j) => {
                 const h = Math.max(2, s.v * hScale - 2); // 2px gap between segments

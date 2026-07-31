@@ -56,7 +56,8 @@ export const STAT_COLUMN_MAP: Record<string, string> = {
 };
 
 // JSON field names (camelCase, from __NEXT_DATA__) → canonical stat_name.
-const JSON_FIELD_MAP: Record<string, string> = {
+// Exported so the box-score parser shares the same mapping.
+export const JSON_FIELD_MAP: Record<string, string> = {
   gamesplayed: "games_played",
   gamesstarted: "games_started",
   goals: "goals",
@@ -144,10 +145,18 @@ export function parseTablesFromDom(html: string, teamNameHint?: string): StatsPa
   $("table").each((_, table) => {
     const $table = $(table);
     if (teamNameHint) {
-      // The team's name should appear in the table itself or a nearby
-      // heading — check a wrapper a couple of levels up.
-      const context = $table.closest("section, article, div").parent().text();
-      if (!context.includes(teamNameHint) && !$table.text().includes(teamNameHint)) return;
+      // The team's name should appear in the table itself or its enclosing
+      // section/heading. Prefer the nearest <section>/<article> (so the
+      // opponent's identically-shaped table in a sibling section doesn't
+      // match); only tableless-div layouts look one level further up.
+      // Case-insensitive: MaxPreps styles names inconsistently.
+      const hint = teamNameHint.toLowerCase();
+      const section = $table.closest("section, article");
+      const div = $table.closest("div");
+      const context = (
+        section.length ? section.text() : div.length ? div.parent().text() : $.root().text()
+      ).toLowerCase();
+      if (!context.includes(hint) && !$table.text().toLowerCase().includes(hint)) return;
     }
 
     const headerCells = $table
@@ -204,8 +213,8 @@ export function parseTablesFromDom(html: string, teamNameHint?: string): StatsPa
         if (!statName) return;
         const cell = cells[i + offset];
         if (cell === undefined) return;
-        const n = parseFloat(cell.replace(/[%,]/g, ""));
-        if (!Number.isNaN(n)) line.stats[statName] = n;
+        const n = asNumber(cell);
+        if (n !== null) line.stats[statName] = n;
       });
 
       if (Object.keys(line.stats).length > 0) byName.set(playerName, line);

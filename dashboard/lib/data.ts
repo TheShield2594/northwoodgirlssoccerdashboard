@@ -121,6 +121,9 @@ export async function getSeasonBundle(
 
       return { bundle: { season, games, roster }, demo: false };
     }
+    // The DB is populated but has no such season/level — that's a real
+    // "not found", not a reason to serve demo data.
+    return { bundle: null, demo: false };
   }
   return { bundle: demoSeasonBundle(level, slug), demo: true };
 }
@@ -193,6 +196,8 @@ export async function getPlayerDetail(
         demo: false,
       };
     }
+    // Populated DB, unknown player id — real "not found".
+    return { player: null, demo: false };
   }
   return { player: demoPlayerDetail(playerId), demo: true };
 }
@@ -218,5 +223,10 @@ function rowToSeason(r: any): SeasonInfo {
 
 function toIso(d: Date | string): string {
   if (typeof d === "string") return d.slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  // pg parses DATE columns as local-midnight Dates; format with local
+  // parts so the calendar day never shifts across the UTC boundary.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }

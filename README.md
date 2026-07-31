@@ -32,8 +32,10 @@ unreachable, so the dashboard never renders a blank page.
 
 1. Push this repo somewhere Portainer can reach (or upload the compose file).
 2. **Stacks → Add stack → Repository**, point at this repo.
-3. Set the `POSTGRES_PASSWORD` environment variable in the stack config
-   (defaults to `northwood` — change it).
+3. Set the `POSTGRES_PASSWORD` environment variable in the stack config —
+   it's required; the stack refuses to start without it. Any characters are
+   fine: the services receive it via discrete `PG*` variables, so it never
+   needs URI-encoding.
 4. Deploy. Postgres applies `db/schema.sql` on first boot.
 5. Exec into the `scraper` container and run the one-time historical
    backfill:
@@ -92,7 +94,7 @@ npm run reparse
 
 ## Repo layout
 
-```
+```text
 docker-compose.yml
 db/schema.sql               # applied automatically on first Postgres boot
 scraper/

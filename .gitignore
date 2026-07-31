@@ -1,8 +1,8 @@
 node_modules/
 .next/
 *.log
-.env
-.env.local
+.env*
+!.env.example
 dist/
 .cache/
 tsconfig.tsbuildinfo

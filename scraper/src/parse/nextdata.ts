@@ -85,8 +85,25 @@ export function asString(v: unknown): string | null {
 export function asNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
-    const n = parseFloat(v);
-    if (Number.isFinite(n)) return n;
+    // Strict: strip thousands separators and one trailing %, then the
+    // WHOLE remainder must be numeric. parseFloat would happily turn
+    // "8-0" into 8 or "12/18" into 12 — reject those.
+    const cleaned = v.trim().replace(/,/g, "").replace(/%$/, "");
+    if (/^-?\d+(\.\d+)?$/.test(cleaned)) return parseFloat(cleaned);
   }
   return null;
+}
+
+/**
+ * Resolve an href from scraped markup/JSON to an absolute maxpreps URL.
+ * Handles absolute, protocol-relative, and path-relative forms; returns
+ * null for anything unusable.
+ */
+export function absoluteUrl(href: string | null | undefined): string | null {
+  if (!href || typeof href !== "string" || href.trim() === "") return null;
+  try {
+    return new URL(href, "https://www.maxpreps.com").toString();
+  } catch {
+    return null;
+  }
 }

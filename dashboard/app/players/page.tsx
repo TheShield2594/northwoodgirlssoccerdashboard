@@ -2,7 +2,7 @@ import Link from "next/link";
 import Controls from "@/components/Controls";
 import DemoBanner from "@/components/DemoBanner";
 import { getSeasonBundle, listSeasons } from "@/lib/data";
-import { resolveSelection } from "@/lib/derive";
+import { isGoalkeeper, resolveSelection } from "@/lib/derive";
 import { levelLabel, withParams } from "@/lib/format";
 import type { RosterPlayer } from "@/lib/types";
 
@@ -33,10 +33,7 @@ export default async function PlayersPage({
   const { bundle } = await getSeasonBundle(level, season);
   if (!bundle) return <p>No data for this season.</p>;
 
-  const isKeeper = (p: RosterPlayer) =>
-    (p.position ?? "").toUpperCase().includes("GK") ||
-    (p.position ?? "").toLowerCase().includes("keep") ||
-    (p.stats.saves ?? 0) > 0;
+  const isKeeper = (p: RosterPlayer) => isGoalkeeper(p.position, p.stats);
 
   const keepers = bundle.roster.filter(isKeeper);
   const field = bundle.roster

@@ -4,8 +4,16 @@ import type { ParsedRosterEntry } from "./parse/roster.js";
 import type { ParsedStatLine } from "./parse/stats.js";
 
 export const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL, // undefined -> pg falls back to PG* env vars
 });
+
+// An idle client dropping (e.g. Postgres restart) must not kill the
+// long-running cron process.
+pool.on("error", (err) => console.warn("[db] pool error:", err.message));
+
+// Both pg.Pool and pg.PoolClient satisfy this — lets the upsert helpers
+// run standalone or inside a transaction.
+type Queryable = Pick<pg.Pool, "query">;
 
 export async function upsertSeason(
   seasonSlug: string,
@@ -23,7 +31,22 @@ export async function upsertSeason(
   return res.rows[0].id;
 }
 
-export async function upsertGame(seasonId: number, g: ParsedGame): Promise<number> {
+export async function upsertGame(
+  seasonId: number,
+  seasonSlug: string,
+  g: ParsedGame
+): Promise<number> {
+  // A game first seen without a real match URL was stored under a
+  // deterministic synthetic key (see schedule.ts). If we now know the real
+  // URL for the same season/date/opponent, upgrade that row in place so the
+  // game doesn't duplicate.
+  if (!g.matchUrl.startsWith("synthetic:")) {
+    await pool.query(
+      `UPDATE games SET maxpreps_url = $1 WHERE maxpreps_url = $2`,
+      [g.matchUrl, `synthetic:${seasonSlug}:${g.isoDate}:${g.opponent}`]
+    );
+  }
+
   const res = await pool.query(
     `INSERT INTO games (season_id, game_date, game_time, opponent, home_away,
                         is_conference, is_playoff, is_tournament,
@@ -60,8 +83,12 @@ export async function upsertGame(seasonId: number, g: ParsedGame): Promise<numbe
   return res.rows[0].id;
 }
 
-export async function upsertPlayer(fullName: string, maxprepsUrl: string | null): Promise<number> {
-  const res = await pool.query(
+export async function upsertPlayer(
+  fullName: string,
+  maxprepsUrl: string | null,
+  q: Queryable = pool
+): Promise<number> {
+  const res = await q.query(
     `INSERT INTO players (full_name, maxpreps_url)
      VALUES ($1, $2)
      ON CONFLICT (full_name)
@@ -74,10 +101,11 @@ export async function upsertPlayer(fullName: string, maxprepsUrl: string | null)
 
 export async function upsertRosterEntry(
   seasonId: number,
-  entry: ParsedRosterEntry
+  entry: ParsedRosterEntry,
+  q: Queryable = pool
 ): Promise<number> {
-  const playerId = await upsertPlayer(entry.fullName, entry.athleteUrl);
-  const res = await pool.query(
+  const playerId = await upsertPlayer(entry.fullName, entry.athleteUrl, q);
+  const res = await q.query(
     `INSERT INTO player_seasons (player_id, season_id, jersey_number, position, grade)
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (player_id, season_id) DO UPDATE SET
@@ -90,26 +118,42 @@ export async function upsertRosterEntry(
   return res.rows[0].id;
 }
 
-/** Save aggregate season stat lines. Creates roster rows for any player
- *  who shows up on the stats page but wasn't on the roster page. */
+/** Save aggregate season stat lines in one transaction (all-or-nothing, so
+ *  a mid-loop failure can't leave a half-written stats page). Creates
+ *  roster rows for any player who shows up on the stats page but wasn't on
+ *  the roster page. */
 export async function saveSeasonStats(seasonId: number, lines: ParsedStatLine[]): Promise<void> {
-  for (const line of lines) {
-    const playerSeasonId = await upsertRosterEntry(seasonId, {
-      fullName: line.playerName,
-      jerseyNumber: line.jerseyNumber,
-      position: null,
-      grade: null,
-      athleteUrl: null,
-    });
-    for (const [statName, statValue] of Object.entries(line.stats)) {
-      await pool.query(
-        `INSERT INTO player_season_stats (player_season_id, stat_name, stat_value)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (player_season_id, stat_name)
-         DO UPDATE SET stat_value = EXCLUDED.stat_value`,
-        [playerSeasonId, statName, statValue]
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const line of lines) {
+      const playerSeasonId = await upsertRosterEntry(
+        seasonId,
+        {
+          fullName: line.playerName,
+          jerseyNumber: line.jerseyNumber,
+          position: null,
+          grade: null,
+          athleteUrl: null,
+        },
+        client
       );
+      for (const [statName, statValue] of Object.entries(line.stats)) {
+        await client.query(
+          `INSERT INTO player_season_stats (player_season_id, stat_name, stat_value)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (player_season_id, stat_name)
+           DO UPDATE SET stat_value = EXCLUDED.stat_value`,
+          [playerSeasonId, statName, statValue]
+        );
+      }
     }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -124,18 +168,30 @@ export async function gameNeedsBoxScore(gameId: number): Promise<boolean> {
   return row && row.result !== null && !row.box_score_scraped;
 }
 
+/** Save one game's box score in a transaction, marking the game scraped
+ *  only when every line landed. */
 export async function saveBoxScore(gameId: number, lines: ParsedStatLine[]): Promise<void> {
-  for (const line of lines) {
-    const playerId = await upsertPlayer(line.playerName, null);
-    for (const [statName, statValue] of Object.entries(line.stats)) {
-      await pool.query(
-        `INSERT INTO game_player_stats (game_id, player_id, stat_name, stat_value)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (game_id, player_id, stat_name)
-         DO UPDATE SET stat_value = EXCLUDED.stat_value`,
-        [gameId, playerId, statName, statValue]
-      );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const line of lines) {
+      const playerId = await upsertPlayer(line.playerName, null, client);
+      for (const [statName, statValue] of Object.entries(line.stats)) {
+        await client.query(
+          `INSERT INTO game_player_stats (game_id, player_id, stat_name, stat_value)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (game_id, player_id, stat_name)
+           DO UPDATE SET stat_value = EXCLUDED.stat_value`,
+          [gameId, playerId, statName, statValue]
+        );
+      }
     }
+    await client.query(`UPDATE games SET box_score_scraped = true WHERE id = $1`, [gameId]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  await pool.query(`UPDATE games SET box_score_scraped = true WHERE id = $1`, [gameId]);
 }

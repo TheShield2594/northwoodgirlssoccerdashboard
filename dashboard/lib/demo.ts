@@ -65,7 +65,19 @@ interface DemoPlayer {
   quality: number; // 0..1 scoring instinct
 }
 
-const SEASON_START_YEARS = Array.from({ length: 16 }, (_, i) => 10 + i); // 10..25 -> 10-11..25-26
+// Demo seasons run 2010 through the most recently COMPLETED season (the
+// fall season wraps up in October), so the window keeps advancing and
+// resolveSelection always finds a valid "current" season without ever
+// showing future games as played.
+function latestCompletedStartYear(): number {
+  const now = new Date();
+  const y = now.getFullYear() - 2000;
+  return Math.max(10, now.getMonth() >= 10 ? y : y - 1); // Nov+ = this year's season is done
+}
+const SEASON_START_YEARS = Array.from(
+  { length: latestCompletedStartYear() - 10 + 1 },
+  (_, i) => 10 + i
+); // 10..latest -> 10-11..latest slug
 const slugOf = (y: number) => `${String(y).padStart(2, "0")}-${String((y + 1) % 100).padStart(2, "0")}`;
 const labelOf = (y: number) => `Fall 20${String(y).padStart(2, "0")}`;
 
@@ -267,7 +279,8 @@ class DemoDB {
       const agg: Record<string, number> = { games_played: 0 };
       for (const g of games) {
         const line = gameStats.get(g.id)?.get(r.playerId);
-        const played = line || rng() < 0.9;
+        const roll = rng() < 0.9; // consume the rng every game to stay deterministic
+        const played = line !== undefined || roll;
         if (played) agg.games_played += 1;
         if (!line) continue;
         for (const [k, v] of Object.entries(line)) agg[k] = (agg[k] ?? 0) + v;

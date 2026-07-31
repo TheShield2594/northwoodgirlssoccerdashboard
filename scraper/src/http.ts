@@ -30,7 +30,12 @@ function cachePath(url: string): string {
  * maxpreps.com again. With --from-cache, only the cache is read.
  */
 export async function fetchHtml(url: string): Promise<string | null> {
-  if (CACHE_DIR && FROM_CACHE) {
+  if (FROM_CACHE) {
+    // --from-cache must NEVER hit the network, even misconfigured.
+    if (!CACHE_DIR) {
+      console.warn("[http] --from-cache set but SCRAPE_CACHE_DIR is empty — nothing to read");
+      return null;
+    }
     try {
       return await readFile(cachePath(url), "utf8");
     } catch {
@@ -38,13 +43,32 @@ export async function fetchHtml(url: string): Promise<string | null> {
     }
   }
 
+  // Transient failures (network errors, 5xx) get a couple of retries with
+  // backoff; 404 is a permanent "this season/level doesn't exist" and other
+  // 4xx are permanent too — both return null immediately.
+  const MAX_ATTEMPTS = 3;
   let res;
-  try {
-    res = await request(url, { headers: HTTP_HEADERS, maxRedirections: 5 });
-  } catch (err) {
-    console.warn(`[http] network error fetching ${url}:`, (err as Error).message);
-    await sleep(REQUEST_DELAY_MS);
-    return null;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      res = await request(url, { headers: HTTP_HEADERS, maxRedirections: 5 });
+    } catch (err) {
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[http] network error on ${url} (attempt ${attempt}), retrying:`, (err as Error).message);
+        await sleep(REQUEST_DELAY_MS * attempt * 2);
+        continue;
+      }
+      console.warn(`[http] network error fetching ${url}, giving up:`, (err as Error).message);
+      await sleep(REQUEST_DELAY_MS);
+      return null;
+    }
+
+    if (res.statusCode >= 500 && attempt < MAX_ATTEMPTS) {
+      console.warn(`[http] ${res.statusCode} on ${url} (attempt ${attempt}), retrying`);
+      await res.body.dump();
+      await sleep(REQUEST_DELAY_MS * attempt * 2);
+      continue;
+    }
+    break;
   }
 
   if (res.statusCode === 404) {
@@ -53,7 +77,10 @@ export async function fetchHtml(url: string): Promise<string | null> {
     return null;
   }
   if (res.statusCode >= 400) {
-    console.warn(`[http] ${res.statusCode} fetching ${url}`);
+    console.warn(
+      `[http] ${res.statusCode} fetching ${url}` +
+        (res.statusCode >= 500 ? " (transient? re-run later)" : " (permanent)")
+    );
     await res.body.dump();
     await sleep(REQUEST_DELAY_MS);
     return null;

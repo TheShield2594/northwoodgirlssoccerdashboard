@@ -19,6 +19,9 @@ const W = 720;
 const H = 190;
 const PAD = { top: 16, right: 12, bottom: 24, left: 30 };
 
+const hpLabel = (p: MarginPoint) =>
+  `${p.title}: ${p.result === "W" ? "win" : p.result === "L" ? "loss" : "tie"} ${p.score}`;
+
 export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[]; ariaLabel: string }) {
   const [hover, setHover] = useState<number | null>(null);
   if (points.length === 0) {
@@ -58,8 +61,12 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
           const by = p.margin >= 0 ? zeroY - h : zeroY;
           return (
             <g key={i}
+               tabIndex={0}
+               aria-label={`${hpLabel(p)}`}
                onMouseEnter={() => setHover(i)}
-               onMouseLeave={() => setHover(null)}>
+               onMouseLeave={() => setHover(null)}
+               onFocus={() => setHover(i)}
+               onBlur={() => setHover(null)}>
               {/* generous invisible hit target */}
               <rect x={PAD.left + i * slot} y={PAD.top} width={slot} height={innerH} fill="transparent" />
               {isTie ? (

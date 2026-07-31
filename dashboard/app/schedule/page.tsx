@@ -42,7 +42,7 @@ export default async function SchedulePage({
             <thead>
               <tr>
                 <th>Date</th>
-                <th></th>
+                <th><span className="sr-only">Venue (home/away/neutral)</span></th>
                 <th>Opponent</th>
                 <th>Type</th>
                 <th className="num">Score</th>

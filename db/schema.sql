@@ -33,6 +33,13 @@ CREATE INDEX IF NOT EXISTS idx_games_date   ON games(game_date);
 
 -- One row per human. Jersey/position/grade live on player_seasons because
 -- they change year to year.
+--
+-- Identity tradeoff (deliberate): players are keyed by full_name because
+-- the season-stats and box-score pages only give us names — an athlete-page
+-- URL is discovered opportunistically from roster pages and can't serve as
+-- the join key across sources. If two different athletes ever share the
+-- exact same name in program history their careers would merge; accepted
+-- for a single-school dataset. maxpreps_url is a profile link, not identity.
 CREATE TABLE IF NOT EXISTS players (
     id              SERIAL PRIMARY KEY,
     full_name       TEXT NOT NULL UNIQUE,
@@ -89,8 +96,8 @@ SELECT
     COUNT(g.id) FILTER (WHERE g.result = 'W' AND g.is_conference) AS conf_wins,
     COUNT(g.id) FILTER (WHERE g.result = 'L' AND g.is_conference) AS conf_losses,
     COUNT(g.id) FILTER (WHERE g.result = 'T' AND g.is_conference) AS conf_ties,
-    COALESCE(SUM(g.team_score)     FILTER (WHERE g.result IS NOT NULL), 0) AS goals_for,
-    COALESCE(SUM(g.opponent_score) FILTER (WHERE g.result IS NOT NULL), 0) AS goals_against
+    COALESCE(SUM(g.team_score)     FILTER (WHERE g.team_score     IS NOT NULL), 0) AS goals_for,
+    COALESCE(SUM(g.opponent_score) FILTER (WHERE g.opponent_score IS NOT NULL), 0) AS goals_against
 FROM seasons s
 LEFT JOIN games g ON g.season_id = s.id
 GROUP BY s.id, s.season_slug, s.label, s.level;

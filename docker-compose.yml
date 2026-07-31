@@ -4,7 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: northwood
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-northwood}   # set POSTGRES_PASSWORD in Portainer before deploying
+      # Required — set POSTGRES_PASSWORD in Portainer's stack env before deploying.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the stack environment}
       POSTGRES_DB: northwood_stats
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -19,7 +20,15 @@ services:
     build: ./scraper
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://northwood:${POSTGRES_PASSWORD:-northwood}@postgres:5432/northwood_stats
+      # Discrete PG* vars (read natively by node-postgres) so passwords with
+      # URI-special characters never need percent-encoding.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: northwood
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the stack environment}
+      PGDATABASE: northwood_stats
+      # The 6am daily scrape fires in this timezone.
+      TZ: America/Indiana/Indianapolis
       # HTML of every fetched page is cached here so parser fixes can be
       # re-run without re-hitting maxpreps.com (npm run reparse).
       SCRAPE_CACHE_DIR: /cache
@@ -33,7 +42,12 @@ services:
     build: ./dashboard
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://northwood:${POSTGRES_PASSWORD:-northwood}@postgres:5432/northwood_stats
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: northwood
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the stack environment}
+      PGDATABASE: northwood_stats
+      TZ: America/Indiana/Indianapolis
       # Set DEMO_MODE=1 to force the bundled sample dataset (the dashboard
       # also falls back to it automatically if the DB is empty/unreachable).
       DEMO_MODE: "0"

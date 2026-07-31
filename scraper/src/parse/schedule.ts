@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { asNumber, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
+import { absoluteUrl, asNumber, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
 
 export interface ParsedGame {
   isoDate: string; // 'YYYY-MM-DD'
@@ -78,27 +78,35 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
     const url = asString(
       pick(obj, "canonicalUrl", "contestUrl", "matchUrl", "url", "webUrl", "boxScoreUrl")
     );
-    const matchUrl = url
-      ? url.startsWith("http")
-        ? url
-        : `https://www.maxpreps.com${url}`
-      : // No URL in the object — synthesize a stable key so the DB can
-        // still dedupe on re-scrape.
-        `synthetic:${seasonSlug}:${isoDate}:${opponent}`;
+    // No URL in the object — synthesize a stable key so the DB can still
+    // dedupe on re-scrape (and upgrade to the real URL when one appears).
+    const matchUrl = absoluteUrl(url) ?? `synthetic:${seasonSlug}:${isoDate}:${opponent}`;
     if (seenUrls.has(matchUrl)) continue;
     seenUrls.add(matchUrl);
 
-    const haRaw = (asString(pick(obj, "homeAway", "homeAwayType", "location")) || "").toLowerCase();
-    const homeAway: ParsedGame["homeAway"] = haRaw.startsWith("a")
+    // homeAway comes from the dedicated fields only; free-text `location`
+    // (a venue name like "Nappanee HS") must never drive the enum, so it
+    // only counts when it IS exactly one of the enum words.
+    const haRaw = (asString(pick(obj, "homeAway", "homeAwayType")) || "").toLowerCase();
+    const locRaw = (asString(pick(obj, "location")) || "").trim().toLowerCase();
+    const haSource = haRaw || (["home", "away", "neutral"].includes(locRaw) ? locRaw : "");
+    const homeAway: ParsedGame["homeAway"] = haSource.startsWith("a")
       ? "away"
-      : haRaw.startsWith("h")
-      ? "home"
-      : haRaw.startsWith("n")
+      : haSource.startsWith("n")
       ? "neutral"
       : "home";
 
-    let teamScore = asNumber(pick(obj, "teamScore", "score", "homeScore", "pointsFor"));
-    let opponentScore = asNumber(pick(obj, "opponentScore", "awayScore", "pointsAgainst"));
+    let teamScore = asNumber(pick(obj, "teamScore", "score", "pointsFor"));
+    let opponentScore = asNumber(pick(obj, "opponentScore", "pointsAgainst"));
+    // Some shapes only give home/away scores — orient them by venue.
+    if (teamScore === null && opponentScore === null) {
+      const homeScore = asNumber(pick(obj, "homeScore"));
+      const awayScore = asNumber(pick(obj, "awayScore"));
+      if (homeScore !== null && awayScore !== null) {
+        teamScore = homeAway === "away" ? awayScore : homeScore;
+        opponentScore = homeAway === "away" ? homeScore : awayScore;
+      }
+    }
     let result = normalizeResult(asString(pick(obj, "result", "resultString", "outcome")));
 
     // Some shapes pack everything into one display string like "W 3-1".
@@ -120,7 +128,14 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
       result = teamScore > opponentScore ? "W" : teamScore < opponentScore ? "L" : "T";
     }
 
-    const contextText = JSON.stringify(obj).toLowerCase();
+    // Flag text comes only from name/type-ish STRING fields — never the
+    // whole serialized object, where URLs and venue names would trigger
+    // false positives (and key presence is not truth).
+    const flagText = Object.entries(obj)
+      .filter(([k, v]) => typeof v === "string" && /name|title|type|description|round|event/i.test(k))
+      .map(([, v]) => v as string)
+      .join(" ")
+      .toLowerCase();
     games.push({
       isoDate,
       timeText: asString(pick(obj, "time", "timeString", "displayTime")),
@@ -128,12 +143,13 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
       homeAway,
       isConference:
         pick(obj, "isConference", "conferenceGame", "isLeague") === true ||
-        /"conference(game)?":true/.test(contextText) ||
         /\*\s*$/.test(opponent),
       isPlayoff:
         pick(obj, "isPlayoff", "isPostSeason", "postSeason") === true ||
-        /playoff|sectional|regional|semi-?state|state final/i.test(contextText),
-      isTournament: pick(obj, "isTournament", "tournament") === true || contextText.includes('"tournament"'),
+        /playoff|sectional|regional|semi-?state|state final/.test(flagText),
+      isTournament:
+        pick(obj, "isTournament", "tournament") === true ||
+        /tournament|invitational/.test(flagText),
       teamScore,
       opponentScore,
       result,
@@ -162,8 +178,8 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
     // Only links that plausibly point at a specific game page
     // (modern: /games/10-14-2025/soccer-fall/a-vs-b.htm, older: .../match/...)
     if (!/\/games\/|match|contest/i.test(href) || /schedule|\/scores\b/.test(href)) return;
-    const matchUrl = href.startsWith("http") ? href : `https://www.maxpreps.com${href}`;
-    if (seenUrls.has(matchUrl)) return;
+    const matchUrl = absoluteUrl(href);
+    if (!matchUrl || seenUrls.has(matchUrl)) return;
 
     const row = $(el).closest("tr, li, [class*='row' i], [class*='contest' i], [class*='game' i]");
     const rowEl = row.length ? row : $(el).parent();
@@ -214,7 +230,12 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
     }
 
     games.push({
-      isoDate: resolveGameDate(seasonSlug, `${dateMatch[1]}/${dateMatch[2]}`),
+      // Prefer an explicit year when the row carries one ("8/18/2025");
+      // only infer from the season slug for bare month/day dates.
+      isoDate:
+        (dateMatch[3]
+          ? normalizeDate(`${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`, seasonSlug)
+          : null) ?? resolveGameDate(seasonSlug, `${dateMatch[1]}/${dateMatch[2]}`),
       timeText: timeMatch ? timeMatch[1] : null,
       opponent,
       homeAway,
@@ -263,7 +284,11 @@ export function normalizeDate(raw: string | null, seasonSlug: string): string | 
   if (md) return resolveGameDate(seasonSlug, raw);
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
+    // Local parts, not toISOString(): a bare date string parses to local
+    // midnight, and the UTC conversion would shift it a day in some zones.
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(
+      parsed.getDate()
+    ).padStart(2, "0")}`;
   }
   return null;
 }

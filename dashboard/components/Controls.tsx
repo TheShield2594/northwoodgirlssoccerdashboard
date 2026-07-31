@@ -43,7 +43,13 @@ export default function Controls({
     <div className="controls">
       <div className="seg" role="group" aria-label="Team level">
         {levels.map((l) => (
-          <button key={l} data-active={l === level} onClick={() => switchLevel(l)}>
+          <button
+            key={l}
+            type="button"
+            data-active={l === level}
+            aria-pressed={l === level}
+            onClick={() => switchLevel(l)}
+          >
             {l === "jv" ? "JV" : "Varsity"}
           </button>
         ))}

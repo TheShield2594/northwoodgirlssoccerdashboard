@@ -1,4 +1,18 @@
-import type { Game, Level, SeasonBundle, SeasonInfo } from "./types";
+import type { Game, Level, SeasonBundle, SeasonInfo, StatKey } from "./types";
+
+/**
+ * Single goalkeeper test used by every page: the listed position wins, and
+ * recorded saves only count as a fallback when no position is known — so a
+ * keeper who scores a goal is still a keeper.
+ */
+export function isGoalkeeper(
+  position: string | null | undefined,
+  stats: Partial<Record<StatKey, number>> | undefined
+): boolean {
+  const pos = (position ?? "").toLowerCase();
+  if (pos) return pos.includes("gk") || pos.includes("keep") || pos.includes("goalie");
+  return (stats?.saves ?? 0) > 0;
+}
 
 export interface SeasonDerived {
   played: Game[];

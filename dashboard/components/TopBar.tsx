@@ -30,7 +30,12 @@ function TopBarInner() {
             const active =
               t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
             return (
-              <Link key={t.href} href={`${t.href}${qs}`} data-active={active}>
+              <Link
+                key={t.href}
+                href={`${t.href}${qs}`}
+                data-active={active}
+                aria-current={active ? "page" : undefined}
+              >
                 {t.label}
               </Link>
             );

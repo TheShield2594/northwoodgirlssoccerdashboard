@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
+import { absoluteUrl, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
 
 export interface ParsedRosterEntry {
   fullName: string;
@@ -54,8 +54,9 @@ function parseFromNextData(root: unknown): ParsedRosterEntry[] {
     }
     if (!fullName || seen.has(fullName)) continue;
     // Filter out non-athlete objects that happened to match (coaches lists
-    // use similar shapes but carry role/title fields).
-    if (asString(pick(obj, "role", "title", "coachType"))) continue;
+    // use similar shapes but carry role/title/coachType fields). Presence
+    // of any such field — string, number, or nested object — disqualifies.
+    if (pick(obj, "role", "title", "coachType") !== undefined) continue;
     seen.add(fullName);
 
     let position = asString(pick(obj, "position", "positionShort"));
@@ -70,7 +71,7 @@ function parseFromNextData(root: unknown): ParsedRosterEntry[] {
       jerseyNumber: asString(pick(obj, "jersey", "jerseyNumber", "uniform", "number")),
       position,
       grade: normalizeGrade(asString(pick(obj, "grade", "gradeClass", "classYear", "year"))),
-      athleteUrl: url ? (url.startsWith("http") ? url : `https://www.maxpreps.com${url}`) : null,
+      athleteUrl: absoluteUrl(url),
     });
   }
   return entries;
@@ -87,7 +88,14 @@ function parseFromDom(html: string): ParsedRosterEntry[] {
   $("a[href*='/athletes/'], a[href*='/career/']").each((_, el) => {
     const name = $(el).text().replace(/\s+/g, " ").trim();
     // Anchor text must look like a person's name, not "View Profile" etc.
-    if (!name || !/^[A-Z][a-z'.-]+(\s+[A-Z][A-Za-z'.-]+)+$/.test(name)) return;
+    // First and last tokens start uppercase (interior caps like McKenna or
+    // O'Brien are fine); middle tokens may be lowercase particles (van, de).
+    if (
+      !name ||
+      !/^[A-Z][A-Za-z'.-]*(\s+[A-Za-z'.-]+)*\s+[A-Z][A-Za-z'.-]*$/.test(name)
+    ) {
+      return;
+    }
     if (seen.has(name)) return;
     seen.add(name);
 
@@ -97,16 +105,19 @@ function parseFromDom(html: string): ParsedRosterEntry[] {
 
     const jersey = (text.match(/#\s?(\d{1,2})\b/) || text.match(/^(\d{1,2})\s/) || [])[1] ?? null;
     const gradeMatch = text.match(/\b(Fr|So|Jr|Sr|Freshman|Sophomore|Junior|Senior)\b\.?/i);
-    const posMatch = text.match(
-      /\b(GK|Goalkeeper|Keeper|D|Defender|Defense|M|MF|Midfielder|Midfield|F|FW|Forward|Striker)\b/
-    );
+    // Full position words match case-insensitively; bare abbreviations only
+    // as standalone UPPERCASE tokens so a stray "D" inside other prose (or a
+    // lowercase "d") can't be mistaken for a position.
+    const posMatch =
+      text.match(/\b(Goalkeeper|Keeper|Defender|Defense|Midfielder|Midfield|Forward|Striker)\b/i) ||
+      text.match(/(?:^|\s)(GK|D|MF?|FW?)(?:\s|$)/);
 
     entries.push({
       fullName: name,
       jerseyNumber: jersey,
       position: posMatch ? posMatch[1] : null,
       grade: gradeMatch ? normalizeGrade(gradeMatch[1]) : null,
-      athleteUrl: href ? (href.startsWith("http") ? href : `https://www.maxpreps.com${href}`) : null,
+      athleteUrl: absoluteUrl(href),
     });
   });
 

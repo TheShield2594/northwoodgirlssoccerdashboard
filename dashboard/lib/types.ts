@@ -41,7 +41,7 @@ export type StatKey =
   | "saves"
   | "goals_against"
   | "shutouts"
-  | string;
+  | (string & {}); // any other scraped stat name; keeps literal autocomplete
 
 export interface RosterPlayer {
   playerId: number;
@@ -49,7 +49,7 @@ export interface RosterPlayer {
   jersey: string | null;
   position: string | null;
   grade: string | null;
-  stats: Record<StatKey, number>;
+  stats: Partial<Record<StatKey, number>>;
 }
 
 export interface SeasonBundle {
@@ -65,7 +65,7 @@ export interface PlayerSeasonLine {
   jersey: string | null;
   position: string | null;
   grade: string | null;
-  stats: Record<StatKey, number>;
+  stats: Partial<Record<StatKey, number>>;
 }
 
 export interface PlayerGameLine {
@@ -74,7 +74,7 @@ export interface PlayerGameLine {
   result: "W" | "L" | "T" | null;
   teamScore: number | null;
   opponentScore: number | null;
-  stats: Record<StatKey, number>;
+  stats: Partial<Record<StatKey, number>>;
 }
 
 export interface PlayerDetail {

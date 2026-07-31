@@ -50,7 +50,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   const seasonId = await upsertSeason(seasonSlug, seasonLabel(seasonSlug), level);
 
   for (const g of games) {
-    const gameId = await upsertGame(seasonId, g);
+    const gameId = await upsertGame(seasonId, seasonSlug, g);
     if (!SKIP_BOX_SCORES && !g.matchUrl.startsWith("synthetic:") && (await gameNeedsBoxScore(gameId))) {
       const boxHtml = await fetchHtml(g.matchUrl);
       if (boxHtml) {
