@@ -1,7 +1,19 @@
 /* ------------------------------------------------------------------ *
  *  NorthWood Girls Soccer — "record book" design system
- *  Palette: team red / ink black / paper white, gray as support.
+ *  Palette: team red / black / white, gray as support.
  *  Type: Fraunces (display serif) · Manrope (UI) · IBM Plex Mono (stats)
+ *
+ *  All four brand colors are sampled from NorthWood/Wa-Nee print
+ *  branding (the Back-to-School Hub sheet):
+ *
+ *    red    #ba0513  banner fills, step circles, corner wedge
+ *    black  #040404  panel grounds and body copy (effectively pure)
+ *    white  #fefefe  card grounds (effectively pure)
+ *    gray   #dedede  halftone field / footer band  (light)
+ *           #949494  mid gray                      (texture only)
+ *
+ *  Every neutral on that sheet measures R-B = 0, i.e. dead neutral with
+ *  no warm or cool cast, so the neutrals here carry none either.
  *
  *  Every surface/text pair below is a token so the night edition
  *  (prefers-color-scheme: dark) can restate the palette without any
@@ -11,48 +23,48 @@
 :root {
   color-scheme: light;
 
-  --paper: #f2efe9;        /* page background — warm paper, not gray-blue */
-  --card: #fffdf9;         /* card surface */
-  --ink: #161310;          /* near-black — primary text */
-  --ink-soft: #3c3630;
-  --muted: #75695c;
-  --hair: #e0d9cc;         /* hairline borders */
-  --hair-strong: #c9c0b0;
-  /* Team red sampled from NorthWood/Wa-Nee print branding (the
-     Back-to-School Hub sheet): banner fills, step circles and the corner
-     wedge all cluster on #ba0513 — hue 355deg, near-full saturation.
-     -deep and -wash below are the same hue at other lightnesses. */
-  --red: #ba0513;          /* team red */
-  --red-deep: #85040e;     /* link red on light surfaces */
-  --red-wash: #f7eaeb;     /* light red tint for fills/hovers */
-  --gray-chip: #edeae2;
+  --paper: #f4f4f4;        /* page background — the sheet's off-white */
+  --card: #ffffff;         /* card surface */
+  /* the sheet's black is #040404; held a hair off pure so large areas of
+     body copy don't halate against white */
+  --ink: #0d0d0d;          /* primary text */
+  --ink-soft: #3a3a3a;
+  /* the sheet's mid gray (#949494) is a texture value and only reaches
+     2.9:1 on white, so text-bearing gray is darkened to clear AA */
+  --muted: #5e5e5e;
+  --hair: #dedede;         /* hairline borders — the sheet's light gray */
+  --hair-strong: #bdbdbd;
+  --red: #ba0513;          /* team red — hue 355deg, near-full saturation */
+  --red-deep: #85040e;     /* link red on light surfaces, same hue */
+  --red-wash: #f7eaeb;     /* light red tint for fills/hovers, same hue */
+  --gray-chip: #e8e8e8;
 
-  --texture: rgba(22, 19, 16, 0.025);   /* ruled-paper lines */
-  --row-hover: #faf6ef;
-  --scroll-shadow: rgba(22, 19, 16, 0.16);
+  --texture: rgba(0, 0, 0, 0.028);   /* ruled-paper lines */
+  --row-hover: #f7f7f7;
+  --scroll-shadow: rgba(0, 0, 0, 0.16);
 
-  /* masthead — dark in both editions, so it keeps its identity */
-  --mast-bg: #161310;
-  --mast-fg: #fffdf9;
-  --mast-fg-idle: #cfc8bd;
-  --mast-fg-dim: #b6ada2;
-  /* the school's display red, lightened just enough to clear 4.5:1 on
+  /* masthead — black in both editions, so it keeps its identity */
+  --mast-bg: #0d0d0d;
+  --mast-fg: #ffffff;
+  --mast-fg-idle: #c8c8c8;
+  --mast-fg-dim: #a8a8a8;
+  /* the sheet's display red, lightened just enough to clear 4.5:1 on
      the black masthead (the print red itself only makes large-text 3:1) */
   --mast-accent: #ee3b40;
 
   /* inverted stat tile — the one "highlighted" tile in a row */
-  --tile-invert-bg: #161310;
-  --tile-invert-fg: #fffdf9;
-  --tile-invert-dim: #b6ada2;
+  --tile-invert-bg: #0d0d0d;
+  --tile-invert-fg: #ffffff;
+  --tile-invert-dim: #a8a8a8;
   --tile-invert-accent: #ee3b40;
 
   /* chart tooltip */
-  --tip-bg: #161310;
-  --tip-fg: #fffdf9;
-  --tip-dim: #b6ada2;
-  --tip-shadow: rgba(22, 19, 16, 0.55);
+  --tip-bg: #0d0d0d;
+  --tip-fg: #ffffff;
+  --tip-dim: #a8a8a8;
+  --tip-shadow: rgba(0, 0, 0, 0.55);
 
-  --jersey-bg: #161310;
+  --jersey-bg: #0d0d0d;
   --jersey-fg: #f5b5ba;
 
   --banner-bg: #f7eaeb;
@@ -61,22 +73,22 @@
 
   /* chart series (validated) */
   --series-for: #ba0513;     /* goals for — solid red */
-  --series-against: #161310; /* goals against — dashed neutral ink */
+  --series-against: #0d0d0d; /* goals against — dashed neutral black */
 
   /* result status — letters always accompany these */
   --win: #ba0513;          /* wins wear the red */
-  --loss: #161310;         /* losses in ink */
-  --tie: #7d7365;          /* ties in warm gray */
-  --on-win: #fffdf9;
-  --on-loss: #fffdf9;
-  --on-tie: #fffdf9;
+  --loss: #0d0d0d;         /* losses in black */
+  --tie: #6e6e6e;          /* ties in neutral gray */
+  --on-win: #ffffff;
+  --on-loss: #ffffff;
+  --on-tie: #ffffff;
 
   /* focus ring: red outline separated from the element by a light halo,
-     so it stays visible on paper AND on the ink-filled controls */
+     so it stays visible on white AND on the black-filled controls */
   --focus: #ba0513;
-  --focus-halo: #fffdf9;
+  --focus-halo: #ffffff;
 
-  --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23161310' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%230d0d0d' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
 
   --font-display: "Fraunces Variable", "Georgia", serif;
   --font-ui: "Manrope Variable", system-ui, sans-serif;
@@ -89,41 +101,41 @@
   :root {
     color-scheme: dark;
 
-    --paper: #14120f;
-    --card: #1c1917;
-    --ink: #f0ece4;
-    --ink-soft: #d3cbbf;
-    --muted: #a1968a;
-    --hair: #302b26;
-    --hair-strong: #4a423a;
+    --paper: #0d0d0d;
+    --card: #1a1a1a;
+    --ink: #f0f0f0;
+    --ink-soft: #d0d0d0;
+    --muted: #9e9e9e;
+    --hair: #2e2e2e;
+    --hair-strong: #474747;
     /* same 355deg hue as the print red, lifted for a dark surface */
     --red: #f74f5c;
     --red-deep: #ff858e;    /* links need to sit brighter on dark */
     --red-wash: #2b1316;
-    --gray-chip: #2a2622;
+    --gray-chip: #272727;
 
-    --texture: rgba(255, 253, 249, 0.022);
-    --row-hover: #241f1b;
+    --texture: rgba(255, 255, 255, 0.022);
+    --row-hover: #232323;
     --scroll-shadow: rgba(0, 0, 0, 0.5);
 
-    --mast-bg: #0f0d0b;
-    --mast-fg: #f7f3ec;
-    --mast-fg-idle: #a79c90;
-    --mast-fg-dim: #8d8276;
+    --mast-bg: #000000;
+    --mast-fg: #f7f7f7;
+    --mast-fg-idle: #a5a5a5;
+    --mast-fg-dim: #8a8a8a;
     --mast-accent: #f74f5c;
 
     /* in the night edition the accent tile is the LIGHTER one */
-    --tile-invert-bg: #2e2823;
-    --tile-invert-fg: #f7f3ec;
-    --tile-invert-dim: #a79c90;
+    --tile-invert-bg: #2c2c2c;
+    --tile-invert-fg: #f7f7f7;
+    --tile-invert-dim: #a5a5a5;
     --tile-invert-accent: #ff858e;
 
-    --tip-bg: #322c27;
-    --tip-fg: #f7f3ec;
-    --tip-dim: #a79c90;
+    --tip-bg: #303030;
+    --tip-fg: #f7f7f7;
+    --tip-dim: #a5a5a5;
     --tip-shadow: rgba(0, 0, 0, 0.6);
 
-    --jersey-bg: #322c27;
+    --jersey-bg: #303030;
     --jersey-fg: #ff959d;
 
     --banner-bg: #2b1316;
@@ -131,19 +143,19 @@
     --banner-fg: #ffa3ab;
 
     --series-for: #f74f5c;
-    --series-against: #ded7cb;  /* the dashed line flips to light */
+    --series-against: #dedede;  /* the dashed line flips to the sheet's light gray */
 
     --win: #f74f5c;
-    --loss: #ded7cb;
-    --tie: #9a8f81;
+    --loss: #dedede;
+    --tie: #969696;      /* the sheet's mid gray, legible as a fill here */
     --on-win: #1a0f0e;   /* dark type on the brighter dark-mode fills */
-    --on-loss: #14120f;
-    --on-tie: #14120f;
+    --on-loss: #0d0d0d;
+    --on-tie: #0d0d0d;
 
     --focus: #ff858e;
-    --focus-halo: #14120f;
+    --focus-halo: #0d0d0d;
 
-    --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23f0ece4' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+    --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23f0f0f0' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
   }
 }
 

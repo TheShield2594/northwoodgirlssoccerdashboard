@@ -24,8 +24,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   // Matches the masthead in each edition so the browser chrome blends in.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#161310" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f0d0b" },
+    { media: "(prefers-color-scheme: light)", color: "#0d0d0d" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
   ],
 };
 
