@@ -53,10 +53,10 @@ export default async function SchedulePage({
             <tbody>
               {all.map((g) => (
                 <tr key={g.id}>
-                  <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--ink-soft)" }}>
+                  <td className="cell-date" style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--ink-soft)" }}>
                     <span className="date-long">{fmtDateLong(g.date)}</span>
                     <span className="date-short">{fmtDateCompact(g.date)}</span>
-                    {g.time ? <span className="date-long" style={{ color: "var(--muted)" }}> · {g.time}</span> : null}
+                    {g.time ? <span className="match-time">{g.time}</span> : null}
                   </td>
                   <td style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
                     {g.homeAway === "away" ? "@" : g.homeAway === "neutral" ? "N" : "vs"}

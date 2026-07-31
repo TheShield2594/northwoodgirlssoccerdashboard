@@ -209,6 +209,19 @@ svg g[tabindex]:focus-visible {
 /* SVG groups can't take box-shadow; the offset alone carries it there */
 svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 
+/* --focus is the team red, which only clears 3:1 against the page
+   surfaces. On the two places it lands on red or near-black — the
+   masthead and the red panel header bars — the ring itself would drop to
+   1.0-2.9:1, so those surfaces restate it in their own on-color. */
+.masthead a:focus-visible {
+  outline-color: var(--mast-fg);
+  box-shadow: 0 0 0 2px var(--mast-bg);
+}
+.card.ruled .card-head .head-link:focus-visible {
+  outline-color: var(--on-win);
+  box-shadow: 0 0 0 2px var(--on-win);
+}
+
 .skip-link {
   position: absolute;
   left: 12px;
@@ -572,10 +585,13 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   background: var(--ink);
   color: var(--paper);
 }
-/* the ring needs to clear the filled segment, not blend into it */
+/* The ring has to sit inside the pill, but the active segment is filled
+   with --ink — near-black by day, near-white at night — so the red ring
+   alone measures 2.9:1 and 2.1:1 against it. The halo moves inside too
+   rather than being dropped, and carries the indicator on both. */
 .seg a:focus-visible, .seg button:focus-visible {
-  outline-offset: -3px;
-  box-shadow: none;
+  outline-offset: -5px;
+  box-shadow: inset 0 0 0 2px var(--focus-halo);
 }
 .select-pill {
   appearance: none;
@@ -701,6 +717,18 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
     width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
+    /* Same local-attachment trick as .table-scroll — the cue only renders
+       on a side that actually has more tabs past the edge — but inverted:
+       the masthead is near-black, so a dark edge shadow would be invisible
+       against it. The cue here is a light glow instead. */
+    background:
+      linear-gradient(to right, var(--mast-bg) 60%, rgba(0, 0, 0, 0)) left center,
+      linear-gradient(to left, var(--mast-bg) 60%, rgba(0, 0, 0, 0)) right center,
+      radial-gradient(farthest-side at 0 50%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0)) left center,
+      radial-gradient(farthest-side at 100% 50%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0)) right center;
+    background-repeat: no-repeat;
+    background-size: 30px 100%, 30px 100%, 16px 100%, 16px 100%;
+    background-attachment: local, local, scroll, scroll;
   }
   .mast-nav::-webkit-scrollbar { display: none; }
   .mast-nav a { padding: 12px 14px; }
@@ -730,10 +758,20 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 }
 
 /* Date cell swaps to its compact form only when space is short. */
+.cell-date { white-space: nowrap; }
 .date-short { display: none; }
+.match-time { color: var(--muted); }
+.match-time::before { content: " · "; }
+
 @media (max-width: 620px) {
   .date-long { display: none; }
   .date-short { display: inline; }
+  /* The time stacks under the compact date rather than being dropped:
+     both strings are short, so the column stays as narrow as it was
+     while Score and Result keep their room. */
+  .cell-date { white-space: normal; }
+  .match-time { display: block; }
+  .match-time::before { content: none; }
 }
 
 /* ---------------------------------------------------------- footer */

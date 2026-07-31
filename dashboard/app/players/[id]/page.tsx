@@ -50,6 +50,19 @@ export default async function PlayerPage({
     ? ["games_played", "saves", "goals_against", "shutouts"]
     : ["games_played", "goals", "assists", "points"];
 
+  // Season table columns; `optional` ones drop out below 620px so G/A/PTS
+  // stay on screen — same priority the Players list uses.
+  const seasonCols: { key: string; optional?: boolean }[] = isKeeper
+    ? [{ key: "games_played" }, { key: "saves" }, { key: "goals_against" }, { key: "shutouts" }]
+    : [
+        { key: "games_played" },
+        { key: "goals" },
+        { key: "assists" },
+        { key: "points" },
+        { key: "shots", optional: true },
+        { key: "shots_on_goal", optional: true },
+      ];
+
   const goalsBySeason = player.seasons
     .filter((s) => s.level === (current?.level ?? "varsity"))
     .map((s) => (isKeeper ? s.stats.saves ?? 0 : s.stats.goals ?? 0));
@@ -115,8 +128,10 @@ export default async function PlayerPage({
                   <th>Level</th>
                   <th className="col-optional">Gr</th>
                   <th className="col-optional">Pos</th>
-                  {(isKeeper ? ["games_played", "saves", "goals_against", "shutouts"] : ["games_played", "goals", "assists", "points", "shots", "shots_on_goal"]).map((k) => (
-                    <th key={k} className="num">{STAT_LABELS[k] ?? k}</th>
+                  {seasonCols.map((c) => (
+                    <th key={c.key} className={`num ${c.optional ? "col-optional" : ""}`}>
+                      {STAT_LABELS[c.key] ?? c.key}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -129,8 +144,10 @@ export default async function PlayerPage({
                     </td>
                     <td className="col-optional" style={{ color: "var(--muted)" }}>{s.grade ?? "—"}</td>
                     <td className="col-optional" style={{ color: "var(--muted)" }}>{s.position ?? "—"}</td>
-                    {(isKeeper ? ["games_played", "saves", "goals_against", "shutouts"] : ["games_played", "goals", "assists", "points", "shots", "shots_on_goal"]).map((k) => (
-                      <td key={k} className="num">{s.stats[k] ?? "·"}</td>
+                    {seasonCols.map((c) => (
+                      <td key={c.key} className={`num ${c.optional ? "col-optional" : ""}`}>
+                        {s.stats[c.key] ?? "·"}
+                      </td>
                     ))}
                   </tr>
                 ))}
