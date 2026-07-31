@@ -8,15 +8,18 @@ import type { RosterPlayer } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const FIELD_COLS: { key: string; label: string; title: string }[] = [
+/** `optional` columns drop out below 620px so G/A/PTS stay on screen. */
+type Col = { key: string; label: string; title: string; optional?: boolean };
+
+const FIELD_COLS: Col[] = [
   { key: "games_played", label: "GP", title: "Games played" },
   { key: "goals", label: "G", title: "Goals" },
   { key: "assists", label: "A", title: "Assists" },
   { key: "points", label: "PTS", title: "Points (2G + A)" },
-  { key: "shots", label: "SH", title: "Shots" },
-  { key: "shots_on_goal", label: "SOG", title: "Shots on goal" },
+  { key: "shots", label: "SH", title: "Shots", optional: true },
+  { key: "shots_on_goal", label: "SOG", title: "Shots on goal", optional: true },
 ];
-const GK_COLS: { key: string; label: string; title: string }[] = [
+const GK_COLS: Col[] = [
   { key: "games_played", label: "GP", title: "Games played" },
   { key: "saves", label: "SV", title: "Saves" },
   { key: "goals_against", label: "GA", title: "Goals against" },
@@ -40,16 +43,16 @@ export default async function PlayersPage({
     .filter((p) => !isKeeper(p))
     .sort((a, b) => (b.stats.points ?? 0) - (a.stats.points ?? 0) || (b.stats.goals ?? 0) - (a.stats.goals ?? 0));
 
-  const renderTable = (players: RosterPlayer[], cols: typeof FIELD_COLS) => (
+  const renderTable = (players: RosterPlayer[], cols: Col[]) => (
     <table className="data-table">
       <thead>
         <tr>
           <th style={{ width: 40 }}>#</th>
           <th>Player</th>
-          <th>Gr</th>
-          <th>Pos</th>
+          <th className="col-optional">Gr</th>
+          <th className="col-optional">Pos</th>
           {cols.map((c) => (
-            <th key={c.key} className="num" title={c.title}>{c.label}</th>
+            <th key={c.key} className={`num ${c.optional ? "col-optional" : ""}`} title={c.title}>{c.label}</th>
           ))}
         </tr>
       </thead>
@@ -60,10 +63,13 @@ export default async function PlayersPage({
             <td className="strong">
               <Link href={withParams(`/players/${p.playerId}`, level, season)}>{p.name}</Link>
             </td>
-            <td style={{ color: "var(--muted)" }}>{p.grade ?? "—"}</td>
-            <td style={{ color: "var(--muted)" }}>{p.position ?? "—"}</td>
+            <td className="col-optional" style={{ color: "var(--muted)" }}>{p.grade ?? "—"}</td>
+            <td className="col-optional" style={{ color: "var(--muted)" }}>{p.position ?? "—"}</td>
             {cols.map((c) => (
-              <td key={c.key} className={`num ${c.key === "goals" || c.key === "saves" ? "strong" : ""}`}>
+              <td
+                key={c.key}
+                className={`num ${c.optional ? "col-optional" : ""} ${c.key === "goals" || c.key === "saves" ? "strong" : ""}`}
+              >
                 {p.stats[c.key] !== undefined ? p.stats[c.key] : "·"}
               </td>
             ))}

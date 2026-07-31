@@ -4,8 +4,11 @@
  * Goal margin by game: bars above the baseline are wins (red), below are
  * losses (ink), ties sit as small gray squares on the line. Position +
  * letter in the tooltip carry the meaning alongside color.
+ *
+ * Sizes to its container so axis labels stay at true pixel size on phones.
  */
 import { useState } from "react";
+import { labelStride, useChartWidth } from "./useChartWidth";
 
 export interface MarginPoint {
   label: string;   // x label "8/16"
@@ -15,40 +18,42 @@ export interface MarginPoint {
   score: string;   // "2-1"
 }
 
-const W = 720;
-const H = 190;
-const PAD = { top: 16, right: 12, bottom: 24, left: 30 };
-
 const hpLabel = (p: MarginPoint) =>
   `${p.title}: ${p.result === "W" ? "win" : p.result === "L" ? "loss" : "tie"} ${p.score}`;
 
 export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[]; ariaLabel: string }) {
+  const { ref, width: W } = useChartWidth();
   const [hover, setHover] = useState<number | null>(null);
+
+  const narrow = W < 460;
+  const H = narrow ? 168 : 190;
+  const PAD = { top: 16, right: 12, bottom: 24, left: narrow ? 26 : 30 };
+
   if (points.length === 0) {
     return <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>No completed games yet.</p>;
   }
 
-  const innerW = W - PAD.left - PAD.right;
+  const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
   const maxAbs = Math.max(1, ...points.map((p) => Math.abs(p.margin)));
   const zeroY = PAD.top + innerH / 2;
   const scale = innerH / 2 / maxAbs;
 
   const slot = innerW / points.length;
-  const barW = Math.min(22, Math.max(6, slot - 2)); // 2px surface gap between bars
+  const barW = Math.min(22, Math.max(4, slot - 2)); // 2px surface gap between bars
   const x = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
 
-  const step = Math.max(1, Math.ceil(points.length / 8));
+  const step = labelStride(points.length, innerW, narrow ? 38 : 46);
   const color = (r: "W" | "L" | "T") => (r === "W" ? "var(--win)" : r === "L" ? "var(--loss)" : "var(--tie)");
   const hp = hover !== null ? points[hover] : null;
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label={ariaLabel}>
+    <div ref={ref} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }} role="img" aria-label={ariaLabel}>
         {[maxAbs, 0, -maxAbs].map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={zeroY - t * scale} y2={zeroY - t * scale} stroke={t === 0 ? "var(--hair-strong)" : "var(--hair)"} strokeWidth={1} />
-            <text x={PAD.left - 8} y={zeroY - t * scale + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">
+            <text x={PAD.left - 6} y={zeroY - t * scale + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">
               {t > 0 ? `+${t}` : t}
             </text>
           </g>
@@ -83,7 +88,7 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
                 />
               )}
               {i % step === 0 && (
-                <text x={PAD.left + i * slot + slot / 2} y={H - 6} fontSize={9.5} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
+                <text x={PAD.left + i * slot + slot / 2} y={H - 6} fontSize={10} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
                   {p.label}
                 </text>
               )}

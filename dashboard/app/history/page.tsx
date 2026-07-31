@@ -130,10 +130,10 @@ export default async function HistoryPage({
                 <tr>
                   <th>Season</th>
                   <th className="num">Record</th>
-                  <th className="num">NLC</th>
+                  <th className="num col-optional">NLC</th>
                   <th className="num">Win %</th>
-                  <th className="num">GF</th>
-                  <th className="num">GA</th>
+                  <th className="num col-optional">GF</th>
+                  <th className="num col-optional">GA</th>
                   <th className="num">Diff</th>
                   <th></th>
                 </tr>
@@ -145,10 +145,10 @@ export default async function HistoryPage({
                     <tr key={s.slug}>
                       <td className="strong">{s.label}</td>
                       <td className="num strong">{record(s)}</td>
-                      <td className="num">{confRecord(s)}</td>
+                      <td className="num col-optional">{confRecord(s)}</td>
                       <td className="num">{Math.round(winPct(s) * 100)}%</td>
-                      <td className="num">{s.goalsFor}</td>
-                      <td className="num">{s.goalsAgainst}</td>
+                      <td className="num col-optional">{s.goalsFor}</td>
+                      <td className="num col-optional">{s.goalsAgainst}</td>
                       <td className="num" style={{ color: diff > 0 ? "var(--red)" : diff < 0 ? "var(--muted)" : undefined, fontWeight: 600 }}>
                         {diff > 0 ? `+${diff}` : diff}
                       </td>

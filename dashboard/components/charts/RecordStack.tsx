@@ -4,9 +4,12 @@
  * Program history: one stacked column per season (wins red, ties gray,
  * losses ink) with a 2px surface gap between segments, hover tooltip,
  * and a season label under each column.
+ *
+ * Sizes to its container so the season labels stay readable on phones.
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { labelStride, useChartWidth } from "./useChartWidth";
 
 export interface SeasonColumn {
   label: string;      // "'25"
@@ -17,33 +20,37 @@ export interface SeasonColumn {
   href?: string;
 }
 
-const W = 720;
-const H = 240;
-const PAD = { top: 18, right: 12, bottom: 26, left: 30 };
-
 export default function RecordStack({ columns, ariaLabel }: { columns: SeasonColumn[]; ariaLabel: string }) {
   const router = useRouter();
+  const { ref, width: W } = useChartWidth();
   const [hover, setHover] = useState<number | null>(null);
+
+  const narrow = W < 460;
+  const H = narrow ? 200 : 240;
+  const PAD = { top: 18, right: 12, bottom: 26, left: narrow ? 26 : 30 };
+
   if (columns.length === 0) return null;
 
-  const innerW = W - PAD.left - PAD.right;
+  const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
   const maxTotal = Math.max(...columns.map((c) => c.wins + c.losses + c.ties), 1);
   const slot = innerW / columns.length;
-  const barW = Math.min(34, Math.max(10, slot - 8));
+  const barW = Math.min(34, Math.max(6, slot - 8));
   const x = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
   const hScale = innerH / maxTotal;
 
   const yTicks = [...new Set([0, Math.round(maxTotal / 2), maxTotal])];
+  // With 17 seasons on a phone, every other label is all that fits.
+  const step = labelStride(columns.length, innerW, narrow ? 26 : 34);
   const hp = hover !== null ? columns[hover] : null;
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label={ariaLabel}>
+    <div ref={ref} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }} role="img" aria-label={ariaLabel}>
         {yTicks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom - t * hScale} y2={H - PAD.bottom - t * hScale} stroke="var(--hair)" strokeWidth={1} />
-            <text x={PAD.left - 8} y={H - PAD.bottom - t * hScale + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">{t}</text>
+            <text x={PAD.left - 6} y={H - PAD.bottom - t * hScale + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">{t}</text>
           </g>
         ))}
 
@@ -80,10 +87,12 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
                         rx={j === segs.length - 1 ? 3 : 1.5} />
                 );
               })}
-              <text x={PAD.left + i * slot + slot / 2} y={H - 7} fontSize={9.5}
-                    fill={hover === i ? "var(--ink)" : "var(--muted)"} textAnchor="middle" fontFamily="var(--font-mono)">
-                {c.label}
-              </text>
+              {(i % step === 0 || hover === i) && (
+                <text x={PAD.left + i * slot + slot / 2} y={H - 7} fontSize={10}
+                      fill={hover === i ? "var(--ink)" : "var(--muted)"} textAnchor="middle" fontFamily="var(--font-mono)">
+                  {c.label}
+                </text>
+              )}
             </g>
           );
         })}

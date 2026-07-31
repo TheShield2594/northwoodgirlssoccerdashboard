@@ -171,7 +171,7 @@ export default async function OverviewPage({
           <section className="card ruled">
             <div className="card-head">
               <h2>{nextGame ? "Next match" : "Final match"}</h2>
-              <Link href={withParams("/schedule", level, season)} className="note" style={{ color: "var(--red-deep)", fontWeight: 700 }}>
+              <Link href={withParams("/schedule", level, season)} className="note head-link">
                 Full schedule →
               </Link>
             </div>
@@ -225,7 +225,7 @@ export default async function OverviewPage({
           <section className="card">
             <div className="card-head">
               <h2>Golden boot</h2>
-              <Link href={withParams("/players", level, season)} className="note" style={{ color: "var(--red-deep)", fontWeight: 700 }}>
+              <Link href={withParams("/players", level, season)} className="note head-link">
                 All players →
               </Link>
             </div>

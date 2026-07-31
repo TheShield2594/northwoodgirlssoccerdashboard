@@ -2,7 +2,7 @@ import Controls from "@/components/Controls";
 import DemoBanner from "@/components/DemoBanner";
 import { getSeasonBundle, listSeasons } from "@/lib/data";
 import { deriveSeason, resolveSelection } from "@/lib/derive";
-import { fmtDateLong, levelLabel, record } from "@/lib/format";
+import { fmtDateCompact, fmtDateLong, levelLabel, record } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +44,8 @@ export default async function SchedulePage({
                 <th>Date</th>
                 <th><span className="sr-only">Venue (home/away/neutral)</span></th>
                 <th>Opponent</th>
-                <th>Type</th>
+                {/* context, not payload — first to go when space is short */}
+                <th className="col-optional">Type</th>
                 <th className="num">Score</th>
                 <th>Result</th>
               </tr>
@@ -52,15 +53,16 @@ export default async function SchedulePage({
             <tbody>
               {all.map((g) => (
                 <tr key={g.id}>
-                  <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--ink-soft)" }}>
-                    {fmtDateLong(g.date)}
-                    {g.time ? <span style={{ color: "var(--muted)" }}> · {g.time}</span> : null}
+                  <td className="cell-date" style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--ink-soft)" }}>
+                    <span className="date-long">{fmtDateLong(g.date)}</span>
+                    <span className="date-short">{fmtDateCompact(g.date)}</span>
+                    {g.time ? <span className="match-time">{g.time}</span> : null}
                   </td>
                   <td style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
                     {g.homeAway === "away" ? "@" : g.homeAway === "neutral" ? "N" : "vs"}
                   </td>
                   <td className="strong">{g.opponent}</td>
-                  <td>
+                  <td className="col-optional">
                     {g.isPlayoff ? (
                       <span className="badge">Playoff</span>
                     ) : g.isConference ? (
