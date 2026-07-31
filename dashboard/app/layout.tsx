@@ -11,6 +11,14 @@ export const metadata: Metadata = {
   title: "NorthWood Panthers — Girls Soccer",
   description:
     "Season stats, schedule, player leaders, and program history for NorthWood girls soccer (Varsity & JV).",
+  applicationName: "NW Soccer",
+  // iOS ignores the web manifest — these are what make "Add to Home Screen"
+  // open fullscreen with a black status bar matching the masthead.
+  appleWebApp: {
+    capable: true,
+    title: "NW Soccer",
+    statusBarStyle: "black",
+  },
 };
 
 export const viewport: Viewport = {

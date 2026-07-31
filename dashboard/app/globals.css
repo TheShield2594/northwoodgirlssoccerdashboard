@@ -18,9 +18,13 @@
   --muted: #75695c;
   --hair: #e0d9cc;         /* hairline borders */
   --hair-strong: #c9c0b0;
-  --red: #b3121f;          /* team red */
-  --red-deep: #7e0c15;     /* link red on light surfaces */
-  --red-wash: #f7e8e6;     /* light red tint for fills/hovers */
+  /* Team red sampled from NorthWood/Wa-Nee print branding (the
+     Back-to-School Hub sheet): banner fills, step circles and the corner
+     wedge all cluster on #ba0513 — hue 355deg, near-full saturation.
+     -deep and -wash below are the same hue at other lightnesses. */
+  --red: #ba0513;          /* team red */
+  --red-deep: #85040e;     /* link red on light surfaces */
+  --red-wash: #f7eaeb;     /* light red tint for fills/hovers */
   --gray-chip: #edeae2;
 
   --texture: rgba(22, 19, 16, 0.025);   /* ruled-paper lines */
@@ -32,13 +36,15 @@
   --mast-fg: #fffdf9;
   --mast-fg-idle: #cfc8bd;
   --mast-fg-dim: #b6ada2;
-  --mast-accent: #e4574f;
+  /* the school's display red, lightened just enough to clear 4.5:1 on
+     the black masthead (the print red itself only makes large-text 3:1) */
+  --mast-accent: #ee3b40;
 
   /* inverted stat tile — the one "highlighted" tile in a row */
   --tile-invert-bg: #161310;
   --tile-invert-fg: #fffdf9;
   --tile-invert-dim: #b6ada2;
-  --tile-invert-accent: #e4574f;
+  --tile-invert-accent: #ee3b40;
 
   /* chart tooltip */
   --tip-bg: #161310;
@@ -47,18 +53,18 @@
   --tip-shadow: rgba(22, 19, 16, 0.55);
 
   --jersey-bg: #161310;
-  --jersey-fg: #f2b8b5;
+  --jersey-fg: #f5b5ba;
 
-  --banner-bg: #f7e8e6;
-  --banner-border: #e5c0ba;
-  --banner-fg: #7e0c15;
+  --banner-bg: #f7eaeb;
+  --banner-border: #e8c2c5;
+  --banner-fg: #85040e;
 
   /* chart series (validated) */
-  --series-for: #b3121f;     /* goals for — solid red */
+  --series-for: #ba0513;     /* goals for — solid red */
   --series-against: #161310; /* goals against — dashed neutral ink */
 
   /* result status — letters always accompany these */
-  --win: #b3121f;          /* wins wear the red */
+  --win: #ba0513;          /* wins wear the red */
   --loss: #161310;         /* losses in ink */
   --tie: #7d7365;          /* ties in warm gray */
   --on-win: #fffdf9;
@@ -67,7 +73,7 @@
 
   /* focus ring: red outline separated from the element by a light halo,
      so it stays visible on paper AND on the ink-filled controls */
-  --focus: #b3121f;
+  --focus: #ba0513;
   --focus-halo: #fffdf9;
 
   --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23161310' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
@@ -90,9 +96,10 @@
     --muted: #a1968a;
     --hair: #302b26;
     --hair-strong: #4a423a;
-    --red: #ef5b52;
-    --red-deep: #ff8f88;    /* links need to sit brighter on dark */
-    --red-wash: #2a1614;
+    /* same 355deg hue as the print red, lifted for a dark surface */
+    --red: #f74f5c;
+    --red-deep: #ff858e;    /* links need to sit brighter on dark */
+    --red-wash: #2b1316;
     --gray-chip: #2a2622;
 
     --texture: rgba(255, 253, 249, 0.022);
@@ -103,13 +110,13 @@
     --mast-fg: #f7f3ec;
     --mast-fg-idle: #a79c90;
     --mast-fg-dim: #8d8276;
-    --mast-accent: #ef5b52;
+    --mast-accent: #f74f5c;
 
     /* in the night edition the accent tile is the LIGHTER one */
     --tile-invert-bg: #2e2823;
     --tile-invert-fg: #f7f3ec;
     --tile-invert-dim: #a79c90;
-    --tile-invert-accent: #ff8079;
+    --tile-invert-accent: #ff858e;
 
     --tip-bg: #322c27;
     --tip-fg: #f7f3ec;
@@ -117,23 +124,23 @@
     --tip-shadow: rgba(0, 0, 0, 0.6);
 
     --jersey-bg: #322c27;
-    --jersey-fg: #ff9a93;
+    --jersey-fg: #ff959d;
 
-    --banner-bg: #2a1614;
-    --banner-border: #56271f;
-    --banner-fg: #ffa8a1;
+    --banner-bg: #2b1316;
+    --banner-border: #56242b;
+    --banner-fg: #ffa3ab;
 
-    --series-for: #ef5b52;
+    --series-for: #f74f5c;
     --series-against: #ded7cb;  /* the dashed line flips to light */
 
-    --win: #ef5b52;
+    --win: #f74f5c;
     --loss: #ded7cb;
     --tie: #9a8f81;
     --on-win: #1a0f0e;   /* dark type on the brighter dark-mode fills */
     --on-loss: #14120f;
     --on-tie: #14120f;
 
-    --focus: #ff8079;
+    --focus: #ff858e;
     --focus-halo: #14120f;
 
     --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23f0ece4' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
