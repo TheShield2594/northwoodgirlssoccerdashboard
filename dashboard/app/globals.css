@@ -2,33 +2,142 @@
  *  NorthWood Girls Soccer — "record book" design system
  *  Palette: team red / ink black / paper white, gray as support.
  *  Type: Fraunces (display serif) · Manrope (UI) · IBM Plex Mono (stats)
+ *
+ *  Every surface/text pair below is a token so the night edition
+ *  (prefers-color-scheme: dark) can restate the palette without any
+ *  component needing to know which edition it's rendering in.
  * ------------------------------------------------------------------ */
 
 :root {
+  color-scheme: light;
+
   --paper: #f2efe9;        /* page background — warm paper, not gray-blue */
   --card: #fffdf9;         /* card surface */
-  --ink: #161310;          /* near-black */
+  --ink: #161310;          /* near-black — primary text */
   --ink-soft: #3c3630;
   --muted: #75695c;
   --hair: #e0d9cc;         /* hairline borders */
   --hair-strong: #c9c0b0;
   --red: #b3121f;          /* team red */
-  --red-deep: #7e0c15;
+  --red-deep: #7e0c15;     /* link red on light surfaces */
   --red-wash: #f7e8e6;     /* light red tint for fills/hovers */
   --gray-chip: #edeae2;
 
+  --texture: rgba(22, 19, 16, 0.025);   /* ruled-paper lines */
+  --row-hover: #faf6ef;
+  --scroll-shadow: rgba(22, 19, 16, 0.16);
+
+  /* masthead — dark in both editions, so it keeps its identity */
+  --mast-bg: #161310;
+  --mast-fg: #fffdf9;
+  --mast-fg-idle: #cfc8bd;
+  --mast-fg-dim: #b6ada2;
+  --mast-accent: #e4574f;
+
+  /* inverted stat tile — the one "highlighted" tile in a row */
+  --tile-invert-bg: #161310;
+  --tile-invert-fg: #fffdf9;
+  --tile-invert-dim: #b6ada2;
+  --tile-invert-accent: #e4574f;
+
+  /* chart tooltip */
+  --tip-bg: #161310;
+  --tip-fg: #fffdf9;
+  --tip-dim: #b6ada2;
+  --tip-shadow: rgba(22, 19, 16, 0.55);
+
+  --jersey-bg: #161310;
+  --jersey-fg: #f2b8b5;
+
+  --banner-bg: #f7e8e6;
+  --banner-border: #e5c0ba;
+  --banner-fg: #7e0c15;
+
   /* chart series (validated) */
-  --series-for: #b3121f;   /* goals for — solid red */
+  --series-for: #b3121f;     /* goals for — solid red */
   --series-against: #161310; /* goals against — dashed neutral ink */
 
   /* result status — letters always accompany these */
   --win: #b3121f;          /* wins wear the red */
   --loss: #161310;         /* losses in ink */
-  --tie: #7d7365;          /* ties in warm gray (4.6:1 vs the white letter) */
+  --tie: #7d7365;          /* ties in warm gray */
+  --on-win: #fffdf9;
+  --on-loss: #fffdf9;
+  --on-tie: #fffdf9;
+
+  /* focus ring: red outline separated from the element by a light halo,
+     so it stays visible on paper AND on the ink-filled controls */
+  --focus: #b3121f;
+  --focus-halo: #fffdf9;
+
+  --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23161310' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
 
   --font-display: "Fraunces Variable", "Georgia", serif;
   --font-ui: "Manrope Variable", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ------------------------------------------------------ night edition */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --paper: #14120f;
+    --card: #1c1917;
+    --ink: #f0ece4;
+    --ink-soft: #d3cbbf;
+    --muted: #a1968a;
+    --hair: #302b26;
+    --hair-strong: #4a423a;
+    --red: #ef5b52;
+    --red-deep: #ff8f88;    /* links need to sit brighter on dark */
+    --red-wash: #2a1614;
+    --gray-chip: #2a2622;
+
+    --texture: rgba(255, 253, 249, 0.022);
+    --row-hover: #241f1b;
+    --scroll-shadow: rgba(0, 0, 0, 0.5);
+
+    --mast-bg: #0f0d0b;
+    --mast-fg: #f7f3ec;
+    --mast-fg-idle: #a79c90;
+    --mast-fg-dim: #8d8276;
+    --mast-accent: #ef5b52;
+
+    /* in the night edition the accent tile is the LIGHTER one */
+    --tile-invert-bg: #2e2823;
+    --tile-invert-fg: #f7f3ec;
+    --tile-invert-dim: #a79c90;
+    --tile-invert-accent: #ff8079;
+
+    --tip-bg: #322c27;
+    --tip-fg: #f7f3ec;
+    --tip-dim: #a79c90;
+    --tip-shadow: rgba(0, 0, 0, 0.6);
+
+    --jersey-bg: #322c27;
+    --jersey-fg: #ff9a93;
+
+    --banner-bg: #2a1614;
+    --banner-border: #56271f;
+    --banner-fg: #ffa8a1;
+
+    --series-for: #ef5b52;
+    --series-against: #ded7cb;  /* the dashed line flips to light */
+
+    --win: #ef5b52;
+    --loss: #ded7cb;
+    --tie: #9a8f81;
+    --on-win: #1a0f0e;   /* dark type on the brighter dark-mode fills */
+    --on-loss: #14120f;
+    --on-tie: #14120f;
+
+    --focus: #ff8079;
+    --focus-halo: #14120f;
+
+    --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23f0ece4' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  }
 }
 
 * { box-sizing: border-box; }
@@ -59,19 +168,47 @@ body {
     0deg,
     transparent 0,
     transparent 31px,
-    rgba(22, 19, 16, 0.025) 31px,
-    rgba(22, 19, 16, 0.025) 32px
+    var(--texture) 31px,
+    var(--texture) 32px
   );
 }
 
 a { color: inherit; text-decoration: none; }
 a:hover { color: var(--red); }
 
+/* ------------------------------------------------------- focus ring */
+
+:where(a, button, select, summary, [tabindex]):focus-visible,
+svg g[tabindex]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--focus-halo);
+  border-radius: 4px;
+}
+/* SVG groups can't take box-shadow; the offset alone carries it there */
+svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 50;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--hair-strong);
+  border-radius: 7px;
+  padding: 10px 16px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transition: top 120ms ease;
+}
+.skip-link:focus { top: 12px; }
+
 /* ---------------------------------------------------------- masthead */
 
 .masthead {
-  background: var(--ink);
-  color: #fffdf9;
+  background: var(--mast-bg);
+  color: var(--mast-fg);
   border-bottom: 3px solid var(--red);
 }
 .masthead-inner {
@@ -89,22 +226,23 @@ a:hover { color: var(--red); }
   gap: 10px;
   padding: 16px 0 14px;
 }
-.wordmark:hover { color: #fffdf9; }
+.wordmark:hover { color: var(--mast-fg); }
 .wordmark .nw {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.35rem;
   letter-spacing: 0.01em;
-  color: #fffdf9;
+  color: var(--mast-fg);
+  white-space: nowrap;
 }
-.wordmark .nw em { font-style: italic; color: #e4574f; }
+.wordmark .nw em { font-style: italic; color: var(--mast-accent); }
 .wordmark .tag {
   font-family: var(--font-mono);
   font-size: 0.66rem;
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #b6ada2;
+  color: var(--mast-fg-dim);
 }
 
 .mast-nav {
@@ -120,14 +258,15 @@ a:hover { color: var(--red); }
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #cfc8bd;
+  color: var(--mast-fg-idle);
   border-bottom: 3px solid transparent;
   margin-bottom: -3px;
+  white-space: nowrap;
 }
-.mast-nav a:hover { color: #fffdf9; }
+.mast-nav a:hover { color: var(--mast-fg); }
 .mast-nav a[data-active="true"] {
-  color: #fffdf9;
-  border-bottom-color: #fffdf9;
+  color: var(--mast-fg);
+  border-bottom-color: var(--mast-fg);
 }
 
 /* ------------------------------------------------------------ layout */
@@ -246,14 +385,15 @@ a:hover { color: var(--red); }
 .tile .t-sub { font-size: 0.74rem; color: var(--muted); margin-top: 3px; }
 .tile.accent { border-top: 3px solid var(--red); }
 .tile.inverse {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #fffdf9;
+  background: var(--tile-invert-bg);
+  border-color: var(--tile-invert-bg);
+  color: var(--tile-invert-fg);
 }
-.tile.inverse .t-label { color: #b6ada2; }
-.tile.inverse .t-sub { color: #b6ada2; }
-.tile.inverse .t-value { color: #fffdf9; }
-.tile.inverse .t-value .red { color: #e4574f; }
+.tile.inverse .t-label { color: var(--tile-invert-dim); }
+.tile.inverse .t-sub { color: var(--tile-invert-dim); }
+.tile.inverse .t-value { color: var(--tile-invert-fg); }
+.tile.inverse .t-value .unit { color: var(--tile-invert-dim); }
+.tile.inverse .t-value .red { color: var(--tile-invert-accent); }
 
 /* -------------------------------------------------------- form strip */
 
@@ -268,11 +408,10 @@ a:hover { color: var(--red); }
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.72rem;
-  color: #fffdf9;
 }
-.form-dot.W { background: var(--win); }
-.form-dot.L { background: var(--loss); }
-.form-dot.T { background: var(--tie); }
+.form-dot.W { background: var(--win); color: var(--on-win); }
+.form-dot.L { background: var(--loss); color: var(--on-loss); }
+.form-dot.T { background: var(--tie); color: var(--on-tie); }
 
 /* ------------------------------------------------------ result chips */
 
@@ -287,11 +426,10 @@ a:hover { color: var(--red); }
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.7rem;
-  color: #fffdf9;
 }
-.chip.W { background: var(--win); }
-.chip.L { background: var(--loss); }
-.chip.T { background: var(--tie); }
+.chip.W { background: var(--win); color: var(--on-win); }
+.chip.L { background: var(--loss); color: var(--on-loss); }
+.chip.T { background: var(--tie); color: var(--on-tie); }
 .chip.none { background: transparent; color: var(--muted); border: 1px dashed var(--hair-strong); }
 
 .jersey {
@@ -301,8 +439,8 @@ a:hover { color: var(--red); }
   width: 26px;
   height: 26px;
   border-radius: 6px;
-  background: var(--ink);
-  color: #f2b8b5;
+  background: var(--jersey-bg);
+  color: var(--jersey-fg);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 600;
@@ -334,7 +472,7 @@ a:hover { color: var(--red); }
   vertical-align: middle;
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #faf6ef; }
+.data-table tr:hover td { background: var(--row-hover); }
 .data-table .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -342,7 +480,21 @@ a:hover { color: var(--red); }
 }
 .data-table th.num { text-align: right; }
 .data-table .strong { font-weight: 700; }
-.table-scroll { overflow-x: auto; }
+
+/* Horizontally scrollable wrapper. The paired gradients only render when
+   there is actually overflow on that side (background-attachment: local),
+   so the fade IS the "there's more this way" affordance. */
+.table-scroll {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--card) 30%, rgba(0, 0, 0, 0)) left center,
+    linear-gradient(to left, var(--card) 30%, rgba(0, 0, 0, 0)) right center,
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), rgba(0, 0, 0, 0)) left center,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), rgba(0, 0, 0, 0)) right center;
+  background-repeat: no-repeat;
+  background-size: 34px 100%, 34px 100%, 13px 100%, 13px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
 
 /* ----------------------------------------------------------- controls */
 
@@ -360,7 +512,10 @@ a:hover { color: var(--red); }
   background: var(--card);
 }
 .seg a, .seg button {
-  padding: 7px 14px;
+  padding: 10px 16px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.78rem;
   font-weight: 700;
   font-family: var(--font-ui);
@@ -368,17 +523,25 @@ a:hover { color: var(--red); }
   background: transparent;
   border: none;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
+.seg a:hover, .seg button:hover { color: var(--ink); }
 .seg a[data-active="true"], .seg button[data-active="true"] {
   background: var(--ink);
-  color: #fffdf9;
+  color: var(--paper);
+}
+/* the ring needs to clear the filled segment, not blend into it */
+.seg a:focus-visible, .seg button:focus-visible {
+  outline-offset: -3px;
+  box-shadow: none;
 }
 .select-pill {
   appearance: none;
   border: 1px solid var(--hair-strong);
   border-radius: 7px;
-  background: var(--card) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23161310' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center;
-  padding: 7px 32px 7px 14px;
+  background: var(--card) var(--select-arrow) no-repeat right 12px center;
+  padding: 10px 32px 10px 14px;
+  min-height: 40px;
   font-size: 0.78rem;
   font-weight: 700;
   font-family: var(--font-ui);
@@ -433,10 +596,10 @@ a:hover { color: var(--red); }
 .badge.outline { background: transparent; border: 1px solid var(--hair-strong); }
 
 .demo-banner {
-  background: var(--red-wash);
-  border: 1px solid #e5c0ba;
+  background: var(--banner-bg);
+  border: 1px solid var(--banner-border);
   border-radius: 8px;
-  color: var(--red-deep);
+  color: var(--banner-fg);
   font-size: 0.8rem;
   padding: 10px 16px;
   margin-bottom: 18px;
@@ -448,13 +611,13 @@ a:hover { color: var(--red); }
 .chart-tip {
   position: absolute;
   pointer-events: none;
-  background: var(--ink);
-  color: #fffdf9;
+  background: var(--tip-bg);
+  color: var(--tip-fg);
   border-radius: 7px;
   padding: 7px 11px;
   font-size: 0.72rem;
   line-height: 1.5;
-  box-shadow: 0 8px 18px -8px rgba(22, 19, 16, 0.55);
+  box-shadow: 0 8px 18px -8px var(--tip-shadow);
   z-index: 20;
   min-width: 120px;
 }
@@ -462,7 +625,7 @@ a:hover { color: var(--red); }
   font-family: var(--font-mono);
   font-size: 0.64rem;
   letter-spacing: 0.06em;
-  color: #b6ada2;
+  color: var(--tip-dim);
   text-transform: uppercase;
   margin-bottom: 2px;
 }
@@ -491,7 +654,44 @@ a:hover { color: var(--red); }
 @media (max-width: 920px) {
   .grid-2, .grid-31 { grid-template-columns: 1fr; }
   .page-head h1 { font-size: 1.7rem; }
-  .mast-nav { margin-left: 0; width: 100%; overflow-x: auto; }
+  .mast-nav {
+    margin-left: 0;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mast-nav::-webkit-scrollbar { display: none; }
+  .mast-nav a { padding: 12px 14px; }
+}
+
+/* --------------------------------------------------------- narrow UI */
+
+@media (max-width: 620px) {
+  .shell { padding: 20px 14px 60px; }
+  .masthead-inner { padding: 0 14px; gap: 10px; }
+  .wordmark { padding: 14px 0 10px; flex-wrap: wrap; gap: 4px 10px; }
+  .card-head { padding: 14px 14px 0; }
+  .card-body { padding: 12px 14px 16px; }
+  .tile-row { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  /* a long all-time record ("115-102-33") has to survive a half-width tile */
+  .tile .t-value { font-size: 1.5rem; }
+  .tile .t-value .unit { font-size: 0.85rem; }
+
+  /* keep the numbers on screen: cells get tighter, context columns drop */
+  .data-table { font-size: 0.82rem; }
+  .data-table th, .data-table td { padding: 8px 6px; }
+  .col-optional { display: none; }
+
+  /* comfortable thumb targets on the controls people hit every visit */
+  .seg a, .seg button { min-height: 44px; padding: 10px 18px; }
+  .select-pill { min-height: 44px; }
+}
+
+/* Date cell swaps to its compact form only when space is short. */
+.date-short { display: none; }
+@media (max-width: 620px) {
+  .date-long { display: none; }
+  .date-short { display: inline; }
 }
 
 /* ---------------------------------------------------------- footer */
@@ -506,4 +706,15 @@ a:hover { color: var(--red); }
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* ------------------------------------------------- motion preference */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

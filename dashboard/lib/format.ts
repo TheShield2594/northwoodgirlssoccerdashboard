@@ -16,6 +16,17 @@ export function fmtDateLong(iso: string): string {
   });
 }
 
+/** Compact date for narrow screens: "Aug 15" (no weekday). */
+export function fmtDateCompact(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function fmtDateYear(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));

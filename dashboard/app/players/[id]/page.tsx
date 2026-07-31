@@ -113,8 +113,8 @@ export default async function PlayerPage({
                 <tr>
                   <th>Season</th>
                   <th>Level</th>
-                  <th>Gr</th>
-                  <th>Pos</th>
+                  <th className="col-optional">Gr</th>
+                  <th className="col-optional">Pos</th>
                   {(isKeeper ? ["games_played", "saves", "goals_against", "shutouts"] : ["games_played", "goals", "assists", "points", "shots", "shots_on_goal"]).map((k) => (
                     <th key={k} className="num">{STAT_LABELS[k] ?? k}</th>
                   ))}
@@ -127,8 +127,8 @@ export default async function PlayerPage({
                     <td>
                       <span className={`badge ${s.level === "varsity" ? "red" : ""}`}>{levelLabel(s.level)}</span>
                     </td>
-                    <td style={{ color: "var(--muted)" }}>{s.grade ?? "—"}</td>
-                    <td style={{ color: "var(--muted)" }}>{s.position ?? "—"}</td>
+                    <td className="col-optional" style={{ color: "var(--muted)" }}>{s.grade ?? "—"}</td>
+                    <td className="col-optional" style={{ color: "var(--muted)" }}>{s.position ?? "—"}</td>
                     {(isKeeper ? ["games_played", "saves", "goals_against", "shutouts"] : ["games_played", "goals", "assists", "points", "shots", "shots_on_goal"]).map((k) => (
                       <td key={k} className="num">{s.stats[k] ?? "·"}</td>
                     ))}

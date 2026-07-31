@@ -5,8 +5,12 @@
  * area fill, series B ("against") as a dashed ink line. Identity is carried
  * by hue AND line style AND the legend/direct labels, so it survives CVD
  * and grayscale. Crosshair + tooltip on hover.
+ *
+ * The viewBox tracks the measured container width, so text renders at its
+ * true pixel size at every breakpoint.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { labelStride, useChartWidth } from "./useChartWidth";
 
 export interface TrendPoint {
   label: string; // x tick label, e.g. "8/16" or "'21"
@@ -22,19 +26,25 @@ interface Props {
   ariaLabel: string;
 }
 
-const W = 720;
-const H = 236;
-const PAD = { top: 18, right: 74, bottom: 26, left: 30 };
-
 export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const { ref, width: W } = useChartWidth();
   const [hover, setHover] = useState<number | null>(null);
+
+  const narrow = W < 460;
+  const H = narrow ? 190 : 236;
+  // On a phone there isn't room for end-of-line labels; the legend covers it.
+  const PAD = {
+    top: 18,
+    right: narrow ? 12 : 74,
+    bottom: 26,
+    left: narrow ? 24 : 30,
+  };
 
   if (points.length === 0) {
     return <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>No games yet.</p>;
   }
 
-  const innerW = W - PAD.left - PAD.right;
+  const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
   const maxY = Math.max(2, ...points.map((p) => Math.max(p.a, p.b)));
   const x = (i: number) =>
@@ -48,8 +58,7 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
     path((p) => p.a) +
     ` L${x(points.length - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z`;
 
-  // sparse x ticks: at most ~8
-  const step = Math.max(1, Math.ceil(points.length / 8));
+  const step = labelStride(points.length, innerW, narrow ? 38 : 46);
   const yTicks = maxY <= 6 ? Array.from({ length: maxY + 1 }, (_, i) => i) : [0, Math.round(maxY / 2), maxY];
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -67,10 +76,12 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
   const hp = hover !== null ? points[hover] : null;
 
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <div ref={ref} style={{ position: "relative" }}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        style={{ width: "100%", height: "auto", display: "block" }}
+        width="100%"
+        height={H}
+        style={{ display: "block", touchAction: "pan-y" }}
         role="img"
         aria-label={ariaLabel}
         onMouseMove={onMove}
@@ -80,7 +91,7 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
         {yTicks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--hair)" strokeWidth={1} />
-            <text x={PAD.left - 8} y={y(t) + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">
+            <text x={PAD.left - 6} y={y(t) + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">
               {t}
             </text>
           </g>
@@ -91,18 +102,22 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
         <path d={path((p) => p.a)} fill="none" stroke="var(--series-for)" strokeWidth={2.2} strokeLinejoin="round" />
         <path d={path((p) => p.b)} fill="none" stroke="var(--series-against)" strokeWidth={1.8} strokeDasharray="5 4" strokeLinejoin="round" />
 
-        {/* direct labels at line ends */}
-        <text x={W - PAD.right + 8} y={y(points[points.length - 1].a) + 3} fontSize={10.5} fontWeight={700} fill="var(--series-for)" fontFamily="var(--font-ui)">
-          {aLabel}
-        </text>
-        <text x={W - PAD.right + 8} y={y(points[points.length - 1].b) + (Math.abs(y(points[points.length - 1].a) - y(points[points.length - 1].b)) < 12 ? 14 : 3)} fontSize={10.5} fontWeight={700} fill="var(--series-against)" fontFamily="var(--font-ui)">
-          {bLabel}
-        </text>
+        {/* direct labels at line ends — only where there's room for them */}
+        {!narrow && (
+          <>
+            <text x={W - PAD.right + 8} y={y(points[points.length - 1].a) + 3} fontSize={10.5} fontWeight={700} fill="var(--series-for)" fontFamily="var(--font-ui)">
+              {aLabel}
+            </text>
+            <text x={W - PAD.right + 8} y={y(points[points.length - 1].b) + (Math.abs(y(points[points.length - 1].a) - y(points[points.length - 1].b)) < 12 ? 14 : 3)} fontSize={10.5} fontWeight={700} fill="var(--series-against)" fontFamily="var(--font-ui)">
+              {bLabel}
+            </text>
+          </>
+        )}
 
         {/* x ticks */}
         {points.map((p, i) =>
           i % step === 0 ? (
-            <text key={i} x={x(i)} y={H - 8} fontSize={9.5} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
+            <text key={i} x={x(i)} y={H - 8} fontSize={10} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
               {p.label}
             </text>
           ) : null
@@ -142,7 +157,7 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
       <div className="legend" style={{ marginTop: 8 }}>
         <span className="l-item"><span className="l-swatch" style={{ background: "var(--series-for)" }} /> {aLabel}</span>
         <span className="l-item">
-          <svg width="16" height="4" style={{ display: "block" }}><line x1="0" y1="2" x2="16" y2="2" stroke="var(--series-against)" strokeWidth="2.4" strokeDasharray="4 3" /></svg>
+          <svg width="16" height="4" style={{ display: "block" }} aria-hidden="true"><line x1="0" y1="2" x2="16" y2="2" stroke="var(--series-against)" strokeWidth="2.4" strokeDasharray="4 3" /></svg>
           {bLabel}
         </span>
       </div>
