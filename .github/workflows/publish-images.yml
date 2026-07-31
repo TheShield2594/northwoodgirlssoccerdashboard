@@ -1,0 +1,126 @@
+name: Publish images
+
+# Builds the three stack images and pushes them to this repo's GitHub
+# Packages (ghcr.io), so Portainer can pull them instead of building.
+#
+#   push to main   -> :latest (plus :main and :sha-<short>)
+#   push of vX.Y.Z -> :X.Y.Z, :X.Y, :latest is left alone
+#   manual run     -> rebuilds whatever branch you pick
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  checks:
+    name: Typecheck + parser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            scraper/package-lock.json
+            dashboard/package-lock.json
+
+      - name: scraper — install
+        working-directory: scraper
+        run: npm ci
+
+      - name: scraper — typecheck
+        working-directory: scraper
+        run: npm run typecheck
+
+      - name: scraper — parser fixture tests
+        working-directory: scraper
+        run: npm test
+
+      - name: dashboard — install
+        working-directory: dashboard
+        run: npm ci
+
+      - name: dashboard — typecheck
+        working-directory: dashboard
+        run: npm run typecheck
+
+  publish:
+    name: Build and push ${{ matrix.image }}
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: dashboard
+            context: ./dashboard
+          - image: scraper
+            context: ./scraper
+          - image: postgres
+            context: ./db
+    steps:
+      - uses: actions/checkout@v4
+
+      # Image references must be lowercase; the repo slug isn't.
+      - name: Resolve image name
+        id: name
+        run: echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.name.outputs.repo }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=northwood-${{ matrix.image }}
+            org.opencontainers.image.description=NorthWood girls soccer dashboard — ${{ matrix.image }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          # TrueNAS/Portainer hosts here are x86; add linux/arm64 below if you
+          # ever deploy to a Pi — it roughly triples build time (QEMU).
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          # Keeps the package page free of "unknown/unknown" attestation rows.
+          provenance: false
+
+      - name: Summary
+        run: |
+          {
+            echo "### ${{ matrix.image }}"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
