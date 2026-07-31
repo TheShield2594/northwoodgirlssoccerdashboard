@@ -1,0 +1,123 @@
+/**
+ * Live-parse diagnostic: fetches one season's pages and prints exactly
+ * what each parser layer found, WITHOUT writing to the database. Run this
+ * from a machine that can reach maxpreps.com before trusting a backfill:
+ *
+ *   npm run verify                 # current season, varsity
+ *   npm run verify -- jv           # current season, JV
+ *   npm run verify -- varsity 24-25
+ *
+ * If a parser returns 0 rows, this prints the top-level __NEXT_DATA__
+ * keys and a few candidate arrays so re-aiming the shape predicates in
+ * src/parse/*.ts is quick.
+ */
+import { CURRENT_SEASON_SLUG, TEAM_NAME_HINT, TeamLevel, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
+import { fetchHtml } from "./http.js";
+import { extractNextData } from "./parse/nextdata.js";
+import { parseSchedulePage } from "./parse/schedule.js";
+import { parseRosterPage } from "./parse/roster.js";
+import { parseStatsPage } from "./parse/stats.js";
+import { parseBoxScorePage } from "./parse/boxscore.js";
+
+const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const level = (args[0] === "jv" ? "jv" : "varsity") as TeamLevel;
+const season = args[1] ?? CURRENT_SEASON_SLUG;
+
+function dumpNextDataShape(html: string) {
+  const next = extractNextData(html) as Record<string, unknown> | null;
+  if (!next) {
+    console.log("  __NEXT_DATA__: NOT FOUND — page may have moved off Next.js; DOM fallback is the only layer");
+    return;
+  }
+  console.log("  __NEXT_DATA__ top-level keys:", Object.keys(next).join(", "));
+  const props = (next as any)?.props?.pageProps;
+  if (props && typeof props === "object") {
+    console.log(
+      "  pageProps keys:",
+      Object.keys(props)
+        .map((k) => {
+          const v = (props as any)[k];
+          const tag = Array.isArray(v) ? `[${v.length}]` : typeof v === "object" && v ? "{…}" : typeof v;
+          return `${k}:${tag}`;
+        })
+        .join(", ")
+    );
+  }
+}
+
+async function main() {
+  console.log(`== verify ${level} ${season} ==\n`);
+
+  // --- schedule
+  const schedUrl = scheduleUrl(level, season);
+  console.log(`SCHEDULE ${schedUrl}`);
+  const schedHtml = await fetchHtml(schedUrl);
+  if (!schedHtml) {
+    console.log("  fetch failed (404 or network) — check the URL in a browser\n");
+  } else {
+    const sched = parseSchedulePage(schedHtml, season);
+    console.log(`  parsed ${sched.games.length} games via ${sched.source}`);
+    for (const g of sched.games.slice(0, 5)) {
+      console.log(
+        `    ${g.isoDate} ${g.homeAway === "away" ? "@" : "vs"} ${g.opponent}` +
+          (g.result ? ` — ${g.result} ${g.teamScore}-${g.opponentScore}` : " (unplayed)") +
+          (g.isConference ? " [conf]" : "")
+      );
+    }
+    if (sched.games.length > 5) console.log(`    … ${sched.games.length - 5} more`);
+    if (sched.games.length === 0) dumpNextDataShape(schedHtml);
+
+    // --- box score for the first played game with a real URL
+    const played = sched.games.find((g) => g.result && !g.matchUrl.startsWith("synthetic:"));
+    if (played) {
+      console.log(`\nBOX SCORE ${played.matchUrl}`);
+      const boxHtml = await fetchHtml(played.matchUrl);
+      if (boxHtml) {
+        const box = parseBoxScorePage(boxHtml, TEAM_NAME_HINT);
+        console.log(`  parsed ${box.lines.length} player lines via ${box.source}`);
+        for (const l of box.lines.slice(0, 5)) console.log(`    ${l.playerName}:`, l.stats);
+        if (box.unmappedHeaders.length) console.log("  unmapped headers:", box.unmappedHeaders.join(", "));
+        if (box.lines.length === 0) {
+          dumpNextDataShape(boxHtml);
+          console.log("  (many games legitimately have no box score entered — try another matchUrl)");
+        }
+      }
+    }
+  }
+
+  // --- roster
+  const rUrl = rosterUrl(level, season);
+  console.log(`\nROSTER ${rUrl}`);
+  const rosterHtml = await fetchHtml(rUrl);
+  if (rosterHtml) {
+    const roster = parseRosterPage(rosterHtml);
+    console.log(`  parsed ${roster.entries.length} entries via ${roster.source}`);
+    for (const e of roster.entries.slice(0, 5)) {
+      console.log(`    #${e.jerseyNumber ?? "?"} ${e.fullName} ${e.position ?? ""} ${e.grade ?? ""}`);
+    }
+    if (roster.entries.length === 0) dumpNextDataShape(rosterHtml);
+  } else {
+    console.log("  fetch failed");
+  }
+
+  // --- season stats
+  const sUrl = statsUrl(level, season);
+  console.log(`\nSTATS ${sUrl}`);
+  const statsHtml = await fetchHtml(sUrl);
+  if (statsHtml) {
+    const stats = parseStatsPage(statsHtml);
+    console.log(`  parsed ${stats.lines.length} stat lines via ${stats.source}`);
+    for (const l of stats.lines.slice(0, 5)) console.log(`    ${l.playerName}:`, l.stats);
+    if (stats.unmappedHeaders.length) console.log("  unmapped headers:", stats.unmappedHeaders.join(", "));
+    if (stats.lines.length === 0) dumpNextDataShape(statsHtml);
+  } else {
+    console.log("  fetch failed");
+  }
+
+  console.log("\n== verify done ==");
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

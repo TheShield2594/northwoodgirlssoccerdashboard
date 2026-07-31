@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: northwood
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-northwood}   # set POSTGRES_PASSWORD in Portainer before deploying
+      POSTGRES_DB: northwood_stats
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U northwood"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  scraper:
+    build: ./scraper
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://northwood:${POSTGRES_PASSWORD:-northwood}@postgres:5432/northwood_stats
+      # HTML of every fetched page is cached here so parser fixes can be
+      # re-run without re-hitting maxpreps.com (npm run reparse).
+      SCRAPE_CACHE_DIR: /cache
+    volumes:
+      - scrapecache:/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build: ./dashboard
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://northwood:${POSTGRES_PASSWORD:-northwood}@postgres:5432/northwood_stats
+      # Set DEMO_MODE=1 to force the bundled sample dataset (the dashboard
+      # also falls back to it automatically if the DB is empty/unreachable).
+      DEMO_MODE: "0"
+    ports:
+      - "3300:3000"   # adjust host port / reverse-proxy as you like
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  scrapecache:
