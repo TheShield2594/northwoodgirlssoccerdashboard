@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { domText } from "./domtext.js";
 import { cleanNameCell, normalizePlayerName, toGivenNameOrder } from "./names.js";
 import {
   ParseSource,
@@ -44,6 +45,9 @@ export function parseRosterPage(html: string): RosterParseResult {
   }
 
   for (const { kind, root } of sources) {
+    // MaxPreps' own shape first: positional athlete tuples (see below).
+    const tuples = parseAthleteTuples(root);
+    if (tuples.length > 0) return { entries: tuples, source: kind, expectedCount };
     const entries = parseFromNextData(root);
     if (entries.length > 0) return { entries, source: kind, expectedCount };
   }
@@ -58,6 +62,93 @@ function findAthleteCount(root: unknown): number | null {
     return typeof v === "number" && Number.isInteger(v) && v >= 0;
   });
   return found.length > 0 ? (pick(found[0].value, "athleteCount") as number) : null;
+}
+
+// ------------------------------------------------------------ athlete tuples
+
+/**
+ * `pageProps.athleteData` is an array of positional ARRAYS, the same as the
+ * schedule's contests. It has no `name`, `jersey`, `position` or `grade` key,
+ * so the object-shaped predicate below never saw a single player — the four
+ * entries a run used to report came from unrelated objects elsewhere in the
+ * payload that happened to fit the shape.
+ *
+ * Everything needed sits at a fixed offset from the athlete's profile url:
+ *
+ *   +0 url   +1 positions   +2 full name   +3 height   +4 height (in)   +5 grade
+ *
+ * The jersey is far earlier in the row, but it always directly follows the
+ * numeric grade (9-12), which is a reliable enough pair to find on its own.
+ */
+const ATHLETE_URL = /\/athletes\/[^/]+\/?\?careerid=/i;
+
+/** "GK, GK, GK" -> "GK"; "MF, D, D" -> "MF/D". MaxPreps repeats a player's
+ *  primary position across all three slots when only one is set. */
+function readPositions(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const parts = value
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const unique = [...new Set(parts)];
+  return unique.length > 0 ? unique.join("/") : null;
+}
+
+/**
+ * The jersey is the digit string immediately after the numeric grade. A height
+ * or weight could in principle form the same number-then-digit-string pair, so
+ * the numeric grade must also agree with the athlete's textual one — 10 next
+ * to "So." is the real pair, 11 next to "So." is a coincidence.
+ */
+function readJersey(row: unknown[], grade: string | null): string | null {
+  for (let i = 0; i < row.length - 1; i++) {
+    const gradeNum = row[i];
+    const jersey = row[i + 1];
+    if (
+      typeof gradeNum === "number" &&
+      Number.isInteger(gradeNum) &&
+      gradeNum >= 9 &&
+      gradeNum <= 12 &&
+      typeof jersey === "string" &&
+      /^\d{1,2}$/.test(jersey) &&
+      (grade === null || normalizeGrade(String(gradeNum)) === grade)
+    ) {
+      return jersey;
+    }
+  }
+  return null;
+}
+
+function readAthleteRow(row: unknown[]): ParsedRosterEntry | null {
+  const at = row.findIndex((v) => typeof v === "string" && ATHLETE_URL.test(v));
+  if (at === -1) return null;
+  const fullName = row[at + 2];
+  if (typeof fullName !== "string" || fullName.trim() === "") return null;
+  const grade = normalizeGrade(typeof row[at + 5] === "string" ? (row[at + 5] as string) : null);
+
+  return {
+    fullName: toGivenNameOrder(cleanNameCell(fullName)),
+    jerseyNumber: readJersey(row, grade),
+    position: readPositions(row[at + 1]),
+    grade,
+    athleteUrl: absoluteUrl(row[at] as string),
+  };
+}
+
+export function parseAthleteTuples(root: unknown): ParsedRosterEntry[] {
+  const entries: ParsedRosterEntry[] = [];
+  const seen = new Set<string>();
+  for (const { value } of deepFindObjects(root, (o) => Array.isArray(pick(o, "athleteData")))) {
+    for (const row of pick(value, "athleteData") as unknown[]) {
+      if (!Array.isArray(row)) continue;
+      const entry = readAthleteRow(row);
+      if (entry && !seen.has(entry.fullName)) {
+        seen.add(entry.fullName);
+        entries.push(entry);
+      }
+    }
+  }
+  return entries;
 }
 
 // ---------------------------------------------------------------- nextdata
@@ -153,7 +244,9 @@ function parseRosterLinks($: cheerio.CheerioAPI): ParsedRosterEntry[] {
 
     const href = $(el).attr("href") || null;
     const row = $(el).closest("tr, li, [class*='row' i], [class*='card' i]");
-    const text = (row.length ? row : $(el).parent()).text().replace(/\s+/g, " ").trim();
+    // Same concatenation hazard as the schedule rows: "#9" and "Sr" sit in
+    // their own elements, and .text() would glue them to their neighbours.
+    const text = domText($, row.length ? row : $(el).parent());
 
     const jersey = (text.match(/#\s?(\d{1,2})\b/) || text.match(/^(\d{1,2})\s/) || [])[1] ?? null;
     const gradeMatch = text.match(/\b(Fr|So|Jr|Sr|Freshman|Sophomore|Junior|Senior)\b\.?/i);

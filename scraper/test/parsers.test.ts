@@ -504,3 +504,336 @@ describe("review fixes", () => {
     expect(games.map((g) => g.opponent)).toEqual(["Lakeland"]);
   });
 });
+
+describe("schedule DOM rows where the date and time share a cell", () => {
+  // Reproduced from a live backfill log. `.text()` glues the two together, and
+  // so does joining the row's immediate children, because both sit inside the
+  // same <td>: "9/3" + "6:45pm" -> "9/36:45pm".
+  const { games } = parseSchedulePage(fixture("schedule-dom-nested.html"), "26-27");
+
+  it("parses every row instead of dropping the single-digit days", () => {
+    // 9/3 -> day 36, 9/5 -> day 51, 10/7 -> day 76 before the fix.
+    expect(games).toHaveLength(4);
+    expect(games.map((g) => g.isoDate)).toEqual([
+      "2026-09-03",
+      "2026-09-05",
+      "2026-09-12",
+      "2026-10-07",
+    ]);
+  });
+
+  it("keeps the kickoff time on every row", () => {
+    expect(games.map((g) => g.timeText)).toEqual(["6:45pm", "12:30pm", "7:15pm", "6:00pm"]);
+  });
+
+  it("keeps the time on a two-digit day, which used to parse but lose it", () => {
+    // "9/12" + "7:15pm" -> "9/127:15pm": the date matched, then the time's
+    // lookbehind saw the "2" and refused. A valid-looking row, no kickoff.
+    const g = games.find((g) => g.isoDate === "2026-09-12")!;
+    expect(g.timeText).toBe("7:15pm");
+  });
+
+  it("still reads opponent, venue, conference flag and score", () => {
+    const northridge = games[0];
+    expect(northridge.opponent).toBe("Northridge");
+    expect(northridge.homeAway).toBe("away");
+    expect(northridge.isConference).toBe(true);
+
+    const valley = games[3];
+    expect(valley.opponent).toBe("Tippecanoe Valley");
+    expect(valley.homeAway).toBe("home");
+    expect(valley.result).toBe("W");
+    expect(valley.teamScore).toBe(12);
+    expect(valley.opponentScore).toBe(0);
+  });
+
+  it("does not treat a time as a score", () => {
+    // "12:30pm" must not become 12-30.
+    const culver = games[1];
+    expect(culver.teamScore).toBeNull();
+    expect(culver.result).toBeNull();
+  });
+});
+
+describe("MaxPreps prints the winner's score first", () => {
+  // Rows copied from the live 25-26 varsity schedule. "L 2-0" cannot mean we
+  // scored 2 and lost — that is what proves the convention.
+  const html = `<table><tbody>
+    <tr><td><div><a href="/in/soccer/girls/match/a-vs-northwood-nappanee/8-16-2025/?c=1">8/16</a><div>11:50am</div></div></td>
+        <td><span>@</span><a href="/in/syracuse/wawasee/soccer/girls/">Wawasee</a><span>***</span></td>
+        <td><span>W 8-0</span><a href="/in/soccer/girls/match/a-vs-northwood-nappanee/8-16-2025/?c=1">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/b-vs-northwood-nappanee/8-25-2025/?c=2">8/25</a><div>7:30pm</div></div></td>
+        <td><span>vs</span><a href="/in/topeka/westview/soccer/girls/">Westview</a></td>
+        <td><span>L 2-0</span><a href="/in/soccer/girls/match/b-vs-northwood-nappanee/8-25-2025/?c=2">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/c-vs-northwood-nappanee/8-28-2025/?c=3">8/28</a><div>7:15pm</div></div></td>
+        <td><span>vs</span><a href="/in/warsaw/warsaw-tigers/soccer/girls/">Warsaw</a><span>*</span></td>
+        <td><span>L 4-1</span><a href="/in/soccer/girls/match/c-vs-northwood-nappanee/8-28-2025/?c=3">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/d-vs-northwood-nappanee/9-6-2025/?c=4">9/6</a><div>12:30pm</div></div></td>
+        <td><span>vs</span><a href="/in/culver/culver-academies/soccer/girls/">Culver Academies</a></td>
+        <td><span>T 1-1</span><a href="/in/soccer/girls/match/d-vs-northwood-nappanee/9-6-2025/?c=4">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/e-vs-northwood-nappanee/10-7-2025/?c=5">10/7</a><div>6:00pm</div></div></td>
+        <td><span>vs</span><a href="/in/akron/tippecanoe-valley/soccer/girls/">Tippecanoe Valley</a><span>**</span></td>
+        <td><span>W 12-0</span><a href="/in/soccer/girls/match/e-vs-northwood-nappanee/10-7-2025/?c=5">Box Score</a></td></tr>
+  </tbody></table>`;
+  const { games } = parseSchedulePage(html, "25-26");
+
+  it("keeps our own score on a win", () => {
+    const w = games.find((g) => g.opponent === "Wawasee")!;
+    expect([w.teamScore, w.opponentScore]).toEqual([8, 0]);
+  });
+
+  it("does not credit us with the opponent's goals on a loss", () => {
+    const westview = games.find((g) => g.opponent === "Westview")!;
+    expect(westview.result).toBe("L");
+    expect([westview.teamScore, westview.opponentScore]).toEqual([0, 2]);
+
+    const warsaw = games.find((g) => g.opponent === "Warsaw")!;
+    expect([warsaw.teamScore, warsaw.opponentScore]).toEqual([1, 4]);
+  });
+
+  it("never records a loss we outscored, or a clean sheet we didn't keep", () => {
+    for (const g of games) {
+      if (g.result === "L") expect(g.teamScore!).toBeLessThan(g.opponentScore!);
+      if (g.result === "W") expect(g.teamScore!).toBeGreaterThan(g.opponentScore!);
+      if (g.result === "T") expect(g.teamScore).toBe(g.opponentScore);
+    }
+    // Only the two wins are shutouts; the losses conceded 2 and 4.
+    expect(games.filter((g) => g.opponentScore === 0)).toHaveLength(2);
+  });
+
+  it("totals match the season the page reports", () => {
+    const gf = games.reduce((n, g) => n + (g.teamScore ?? 0), 0);
+    const ga = games.reduce((n, g) => n + (g.opponentScore ?? 0), 0);
+    expect([gf, ga]).toEqual([22, 7]);
+  });
+
+  it("reads the asterisk legend: * conference, ** playoff, *** tournament", () => {
+    const by = (name: string) => games.find((g) => g.opponent === name)!;
+    expect(by("Warsaw").isConference).toBe(true);
+    expect(by("Warsaw").isPlayoff).toBe(false);
+
+    expect(by("Tippecanoe Valley").isPlayoff).toBe(true);
+    expect(by("Tippecanoe Valley").isConference).toBe(false);
+
+    expect(by("Wawasee").isTournament).toBe(true);
+    expect(by("Wawasee").isConference).toBe(false);
+
+    expect(by("Westview").isConference).toBe(false);
+  });
+});
+
+describe("a two-digit-looking date that is really day + hour", () => {
+  // "10/2" + "6:00pm" collapses to "10/26:00pm", and the date regex takes
+  // "10/26" — a real calendar day, so nothing is skipped and nothing warns.
+  // The game just lands 24 days late with no kickoff. 2025-10-26 was a
+  // Sunday; IHSAA soccer doesn't play Sundays.
+  const html = `<table><tbody><tr>
+    <td><div><a href="/in/soccer/girls/match/wawasee-vs-northwood/10-2-2025/?c=z">10/2</a><div>6:00pm</div></div></td>
+    <td><span>vs</span><a href="/in/syracuse/wawasee-warriors/soccer/girls/">Wawasee</a></td>
+    <td><span>W 7-0</span><a href="/in/soccer/girls/match/wawasee-vs-northwood/10-2-2025/?c=z">Box Score</a></td>
+  </tr></tbody></table>`;
+  const { games } = parseSchedulePage(html, "25-26");
+
+  it("keeps the real date instead of absorbing the hour into the day", () => {
+    expect(games[0].isoDate).toBe("2025-10-02");
+    expect(games[0].timeText).toBe("6:00pm");
+  });
+
+  it("detects a home game, which the glued 'vsWawasee' used to hide", () => {
+    expect(games[0].homeAway).toBe("home");
+  });
+});
+
+describe("schedule parser — MaxPreps' real contest-tuple shape", () => {
+  // pageProps.contests is an array of positional tuples with no "date" or
+  // "opponent" key, which is why the object predicate never matched and every
+  // schedule page fell to the DOM guesser.
+  const { games, source } = parseSchedulePage(fixture("schedule-nextdata-contests.html"), "25-26");
+
+  it("parses from JSON instead of falling back to the DOM", () => {
+    expect(source).toBe("nextdata");
+  });
+
+  it("keeps every contest and skips the deleted one", () => {
+    // The 9/23 contest is flagged deleted and carries no match url. The
+    // 10/14 one is scheduled but unplayed, and must still come through.
+    expect(games).toHaveLength(7);
+    expect(games.map((g) => g.isoDate)).toEqual([
+      "2025-08-16", "2025-08-21", "2025-08-25", "2025-08-28",
+      "2025-10-02", "2025-10-07", "2025-10-14",
+    ]);
+  });
+
+  it("has a kickoff time on every game", () => {
+    expect(games.map((g) => g.timeText)).toEqual([
+      "11:50am", "7:00pm", "7:30pm", "7:15pm", "6:30pm", "6:00pm", "7:15pm",
+    ]);
+  });
+
+  it("reads each side's own score, so a loss is never a clean sheet", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    // The page prints "L 2-0" and "L 4-1" winner-first; the JSON states ours.
+    expect([by("2025-08-25").teamScore, by("2025-08-25").opponentScore]).toEqual([0, 2]);
+    expect([by("2025-08-28").teamScore, by("2025-08-28").opponentScore]).toEqual([1, 4]);
+    expect([by("2025-08-16").teamScore, by("2025-08-16").opponentScore]).toEqual([8, 0]);
+    for (const g of games.filter((g) => g.result !== null)) {
+      if (g.result === "L") expect(g.teamScore!).toBeLessThan(g.opponentScore!);
+      if (g.result === "W") expect(g.teamScore!).toBeGreaterThan(g.opponentScore!);
+    }
+  });
+
+  it("reads venue from the contest, not from '@' in row text", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    expect(by("2025-08-16").homeAway).toBe("away");
+    expect(by("2025-08-21").homeAway).toBe("home");
+    expect(by("2025-10-07").homeAway).toBe("neutral");
+    // The old DOM path found zero home games for the whole season.
+    expect(games.filter((g) => g.homeAway === "home").length).toBeGreaterThan(0);
+  });
+
+  it("reads conference/playoff/tournament from the contest type", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    expect(by("2025-08-28").isConference).toBe(true);
+    expect(by("2025-08-16").isTournament).toBe(true);
+    expect(by("2025-08-16").isConference).toBe(false);
+    expect(by("2025-10-07").isPlayoff).toBe(true);
+    expect(by("2025-08-25").isConference).toBe(false);
+  });
+
+  it("dates the 10/2 game to October 2, not October 26", () => {
+    // "10/2" + "6:30pm" collapsed to "10/26:00pm" in the DOM layer, giving a
+    // valid-but-wrong Oct 26 (a Sunday). The url carries the real date.
+    const wawasee = games.filter((g) => g.opponent === "Wawasee");
+    expect(wawasee.map((g) => g.isoDate)).toEqual(["2025-08-16", "2025-10-02"]);
+    expect(wawasee.map((g) => g.teamScore)).toEqual([8, 7]);
+  });
+});
+
+describe("roster parser — MaxPreps' real athlete-tuple shape", () => {
+  // pageProps.athleteData is positional arrays with no name/jersey/position/
+  // grade key. The object predicate saw none of them; the handful of entries
+  // a run used to report came from unrelated objects in the same payload.
+  const { entries, source, expectedCount } = parseRosterPage(
+    fixture("roster-nextdata-athletes.html")
+  );
+
+  it("finds every athlete the page says it has", () => {
+    expect(source).toBe("nextdata");
+    expect(entries).toHaveLength(8);
+    expect(expectedCount).toBe(8);
+    expect(entries.length).toBe(expectedCount);
+  });
+
+  it("reads name, jersey, position and grade", () => {
+    expect(entries[0]).toEqual({
+      fullName: "Savannah Sipic",
+      jerseyNumber: "00",
+      position: "GK",
+      grade: "So",
+      athleteUrl:
+        "https://www.maxpreps.com/in/nappanee/northwood-panthers/athletes/savannah-sipic/?careerid=8ctfej1eit6h1",
+    });
+  });
+
+  it("keeps a '00' jersey rather than dropping it as falsy", () => {
+    expect(entries.find((e) => e.fullName === "Savannah Sipic")!.jerseyNumber).toBe("00");
+  });
+
+  it("collapses repeated position slots and joins distinct ones", () => {
+    const by = (n: string) => entries.find((e) => e.fullName === n)!;
+    expect(by("Noa Weldy").position).toBe("MF"); // "MF, MF, MF"
+    expect(by("Evie Graverson").position).toBe("MF/D"); // "MF, D, D"
+    expect(by("Jalayne Hurst").position).toBe("MF/FB"); // "MF, FB"
+    expect(by("Kenna Davis").position).toBe("HB"); // single slot
+  });
+
+  it("normalizes every grade the page prints", () => {
+    const grades = Object.fromEntries(entries.map((e) => [e.fullName, e.grade]));
+    expect(grades["Kenna Davis"]).toBe("Fr");
+    expect(grades["Noa Weldy"]).toBe("So");
+    expect(grades["Lily Reaker"]).toBe("Jr");
+    expect(grades["Brooke Johnson"]).toBe("Sr");
+  });
+
+  it("does not mistake the sport metadata for a player", () => {
+    // sportData carries athleteName:"Player" and name:"Soccer", which is the
+    // shape the old predicate latched onto.
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Player");
+    expect(names).not.toContain("Soccer");
+  });
+
+  it("keeps every athlete's profile url for the player pages", () => {
+    expect(entries.every((e) => e.athleteUrl?.includes("careerid="))).toBe(true);
+  });
+});
+
+describe("review fixes — contest and athlete tuples", () => {
+  const sched = parseSchedulePage(fixture("schedule-nextdata-contests.html"), "25-26");
+  const roster = parseRosterPage(fixture("roster-nextdata-athletes.html"));
+
+  it("parses a scheduled contest that has no result yet", () => {
+    // Anchoring team rows on the result letter dropped every upcoming game,
+    // which would have sent a whole not-yet-started season to the DOM layer.
+    const g = sched.games.find((g) => g.isoDate === "2025-10-14")!;
+    expect(g).toBeDefined();
+    expect(g.opponent).toBe("Plymouth");
+    expect(g.result).toBeNull();
+    expect(g.teamScore).toBeNull();
+    expect(g.opponentScore).toBeNull();
+    // Everything not derived from the result still comes through.
+    expect(g.timeText).toBe("7:15pm");
+    expect(g.homeAway).toBe("home");
+    expect(g.isConference).toBe(true);
+  });
+
+  it("still reads played contests alongside the unplayed one", () => {
+    expect(sched.source).toBe("nextdata");
+    expect(sched.games).toHaveLength(7);
+    expect(sched.games.filter((g) => g.result !== null)).toHaveLength(6);
+  });
+
+  it("takes the kickoff, not a same-day last-updated stamp", () => {
+    // The unplayed contest was updated on 2025-10-14 too; the kickoff is the
+    // later of the two matching timestamps.
+    expect(sched.games.find((g) => g.isoDate === "2025-10-14")!.timeText).toBe("7:15pm");
+  });
+
+  it("does not mistake a height/weight pair for the jersey", () => {
+    // Ivy Colville's row carries 11 followed by "5" before her real grade and
+    // jersey; only the pair whose number matches her grade counts.
+    const ivy = roster.entries.find((e) => e.fullName === "Ivy Colville")!;
+    expect(ivy.jerseyNumber).toBe("7");
+    expect(ivy.grade).toBe("So");
+  });
+
+  it("keeps the roster count matching the page", () => {
+    expect(roster.entries.length).toBe(roster.expectedCount);
+  });
+});
+
+describe("review fixes — row text", () => {
+  it("reads a playoff marker split across elements", () => {
+    // domText inserts a space between adjacent nodes, so "**" can arrive as
+    // "* *" and used to read as a single conference asterisk.
+    const html = `<table><tbody><tr>
+      <td><div><a href="/in/soccer/girls/match/a-vs-northwood/10-7-2025/?c=z">10/7</a><div>6:00pm</div></div></td>
+      <td><span>vs</span><a href="/in/akron/tippecanoe-valley/soccer/girls/">Tippecanoe Valley</a><span>*</span><span>*</span></td>
+      <td><span>W 12-0</span><a href="/in/soccer/girls/match/a-vs-northwood/10-7-2025/?c=z">Box Score</a></td>
+    </tr></tbody></table>`;
+    const g = parseSchedulePage(html, "25-26").games[0];
+    expect(g.isPlayoff).toBe(true);
+    expect(g.isConference).toBe(false);
+  });
+
+  it("ignores script and style content in a row", () => {
+    const html = `<table><tbody><tr>
+      <td><script>var d = "9/99";</script><style>.x{content:"7/77"}</style>
+          <div><a href="/in/soccer/girls/match/b-vs-northwood/9-3-2025/?c=y">9/3</a><div>6:45pm</div></div></td>
+      <td><span>vs</span><a href="/in/middlebury/northridge/soccer/girls/">Northridge</a></td>
+    </tr></tbody></table>`;
+    const g = parseSchedulePage(html, "25-26").games[0];
+    expect(g.isoDate).toBe("2025-09-03");
+    expect(g.timeText).toBe("6:45pm");
+  });
+});
