@@ -10,6 +10,7 @@ import {
   pick,
 } from "./nextdata.js";
 import { dateFromDateTime, normalizeTimeText, timeFromDateTime } from "./datetime.js";
+import { domText } from "./domtext.js";
 
 export interface ParsedGame {
   isoDate: string; // 'YYYY-MM-DD'
@@ -156,11 +157,10 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
       if (rs) {
         const m = rs.match(/([WLT])?\s*(\d{1,2})\s*[-–]\s*(\d{1,2})/i);
         if (m) {
-          const a = parseInt(m[2], 10);
-          const b = parseInt(m[3], 10);
-          // MaxPreps writes the team's own score first in result strings.
-          if (teamScore === null) teamScore = a;
-          if (opponentScore === null) opponentScore = b;
+          const letter = m[1] ? normalizeResult(m[1]) : result;
+          const oriented = orientScore(letter, parseInt(m[2], 10), parseInt(m[3], 10));
+          if (teamScore === null) teamScore = oriented.teamScore;
+          if (opponentScore === null) opponentScore = oriented.opponentScore;
           if (result === null && m[1]) result = normalizeResult(m[1]);
         }
       }
@@ -186,11 +186,11 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
     games.push({
       isoDate,
       timeText,
-      opponent: opponent.replace(/\*\s*$/, "").trim(),
+      opponent: opponent.replace(/\*+\s*$/, "").trim(),
       homeAway,
       isConference:
         pick(obj, "isConference", "conferenceGame", "isLeague") === true ||
-        /\*\s*$/.test(opponent),
+        starCount(opponent) === 1,
       isPlayoff:
         pick(obj, "isPlayoff", "isPostSeason", "postSeason") === true ||
         /playoff|sectional|regional|semi-?state|state final/.test(flagText),
@@ -230,19 +230,11 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
 
     const row = $(el).closest("tr, li, [class*='row' i], [class*='contest' i], [class*='game' i]");
     const rowEl = row.length ? row : $(el).parent();
-    // Never use rowEl.text() here: older archived pages emit adjacent cells
-    // with no whitespace between them, and .text() concatenates them into one
-    // run ("9/5" + "6-2" -> "9/56-2"), which the date regex then reads as
-    // month=9 day=56. Join the row's own nodes with a guaranteed space.
-    // .contents() rather than .children() so a cell's bare text (the time in
-    // "<td><a>8/16</a> 10:00am</td>") survives when rowEl is that cell.
-    const text = rowEl
-      .contents()
-      .map((_, el2) => $(el2).text().trim())
-      .get()
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
+    // Never use rowEl.text(): adjacent nodes carry no whitespace between them,
+    // so the date runs into the time ("9/3" + "6:45pm" -> "9/36:45pm"). Joining
+    // only the row's immediate children isn't enough either — those two live in
+    // the SAME cell — so domText walks down to the text nodes. See domtext.ts.
+    const text = domText($, rowEl);
     if (!text) return;
 
     const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
@@ -277,11 +269,11 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
       .text()
       .trim()
       .replace(/^(?:vs\.?|@)\s*/i, "")
-      .replace(/\*\s*$/, "")
+      .replace(/\*+\s*$/, "")
       .trim();
     if (!opponent) {
       const m = text.match(/(?:vs\.?|@)\s*([A-Za-z][A-Za-z .'&()-]+?)(?=\s*(?:\d|W\b|L\b|T\b|Preview|Box|$))/i);
-      opponent = m ? m[1].trim().replace(/\*\s*$/, "") : "";
+      opponent = m ? m[1].trim().replace(/\*+\s*$/, "") : "";
     }
     if (!opponent || isOwnTeam(opponent)) return;
 
@@ -292,13 +284,15 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
     );
     const scoreMatch = text.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
     if (scoreMatch && timeIsNotScore(scoreMatch[0])) {
-      teamScore = parseInt(scoreMatch[1], 10);
-      opponentScore = parseInt(scoreMatch[2], 10);
+      const first = parseInt(scoreMatch[1], 10);
+      const second = parseInt(scoreMatch[2], 10);
+      ({ teamScore, opponentScore } = orientScore(result, first, second));
       if (result === null) {
         result = teamScore > opponentScore ? "W" : teamScore < opponentScore ? "L" : "T";
       }
     }
 
+    const stars = starCount(text);
     games.push({
       // Prefer an explicit year when the row carries one ("8/18/2025");
       // only infer from the season slug for bare month/day dates.
@@ -306,9 +300,10 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
       timeText,
       opponent,
       homeAway,
-      isConference: /\*/.test(text),
-      isPlayoff: /playoff|sectional|regional|semi-?state|state final/i.test(text),
-      isTournament: /tournament|invitational/i.test(text),
+      // Legend: * Conference, ** Playoffs, *** Tournament.
+      isConference: stars === 1,
+      isPlayoff: stars === 2 || /playoff|sectional|regional|semi-?state|state final/i.test(text),
+      isTournament: stars === 3 || /tournament|invitational/i.test(text),
       teamScore,
       opponentScore,
       result,
@@ -321,6 +316,36 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
 
 function timeIsNotScore(s: string): boolean {
   return !s.includes(":");
+}
+
+/**
+ * MaxPreps prints the WINNER's score first: "L 2-0" is a 0-2 defeat, not a
+ * 2-0 win. ("L 2-0" cannot mean we scored 2 and lost, which is what proves
+ * the convention.) Reading the pair as ours-first credited us with the
+ * opponent's goals on every loss AND recorded a clean sheet, so a real
+ * 5-8-3 season with 36 GF / 23 GA imported as 4-5-2 with 32 scored, 5
+ * conceded and 8 clean sheets.
+ *
+ * With no result letter there is nothing to orient by — some archived rows
+ * show a bare "6-2" — so the pair is left in source order.
+ */
+function orientScore(
+  result: ParsedGame["result"],
+  first: number,
+  second: number
+): { teamScore: number; opponentScore: number } {
+  return result === "L"
+    ? { teamScore: second, opponentScore: first }
+    : { teamScore: first, opponentScore: second };
+}
+
+/**
+ * The schedule legend is "* Conference | ** Playoffs | *** Tournament", so
+ * the COUNT carries the meaning. Treating any asterisk as conference filed
+ * every playoff and tournament game as a conference game too.
+ */
+function starCount(text: string): number {
+  return (text.match(/\*+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
 }
 
 /**

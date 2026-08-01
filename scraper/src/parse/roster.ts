@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { domText } from "./domtext.js";
 import { cleanNameCell, normalizePlayerName, toGivenNameOrder } from "./names.js";
 import {
   ParseSource,
@@ -153,7 +154,9 @@ function parseRosterLinks($: cheerio.CheerioAPI): ParsedRosterEntry[] {
 
     const href = $(el).attr("href") || null;
     const row = $(el).closest("tr, li, [class*='row' i], [class*='card' i]");
-    const text = (row.length ? row : $(el).parent()).text().replace(/\s+/g, " ").trim();
+    // Same concatenation hazard as the schedule rows: "#9" and "Sr" sit in
+    // their own elements, and .text() would glue them to their neighbours.
+    const text = domText($, row.length ? row : $(el).parent());
 
     const jersey = (text.match(/#\s?(\d{1,2})\b/) || text.match(/^(\d{1,2})\s/) || [])[1] ?? null;
     const gradeMatch = text.match(/\b(Fr|So|Jr|Sr|Freshman|Sophomore|Junior|Senior)\b\.?/i);

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><body>
+<!--
+  The real 26-27/25-26 shape: the date and the kickoff sit in separate
+  elements INSIDE THE SAME cell, with no whitespace between them. Joining the
+  row's immediate children doesn't separate them — only walking to text nodes
+  does. Rows reproduced from a live backfill log.
+-->
+<table><tbody>
+  <tr>
+    <td class="date"><div><a href="/in/soccer/girls/match/northridge-middlebury-vs-northwood-nappanee/9-3-2026/?c=aaa">9/3</a><div class="time">6:45pm</div></div></td>
+    <td><span>@</span><a href="/in/middlebury/northridge-raiders/soccer/girls/">Northridge</a><span>*</span></td>
+    <td><a href="/in/soccer/girls/match/northridge-middlebury-vs-northwood-nappanee/9-3-2026/?c=aaa">Preview</a></td>
+  </tr>
+  <tr>
+    <td class="date"><div><a href="/in/soccer/girls/match/culver-academies-vs-northwood-nappanee/9-5-2026/?c=bbb">9/5</a><div class="time">12:30pm</div></div></td>
+    <td><span>@</span><a href="/in/culver/culver-academies-eagles/soccer/girls/">Culver Academies</a></td>
+    <td><a href="/in/soccer/girls/match/culver-academies-vs-northwood-nappanee/9-5-2026/?c=bbb">Preview</a></td>
+  </tr>
+  <tr>
+    <!-- Two-digit day: this one used to parse with a VALID date and silently
+         lose its time, which is why "11 games, 0 times" was possible. -->
+    <td class="date"><div><a href="/in/soccer/girls/match/concord-elkhart-vs-northwood-nappanee/9-12-2026/?c=ccc">9/12</a><div class="time">7:15pm</div></div></td>
+    <td><span>vs</span><a href="/in/elkhart/concord-minutemen/soccer/girls/">Concord</a><span>*</span></td>
+    <td><a href="/in/soccer/girls/match/concord-elkhart-vs-northwood-nappanee/9-12-2026/?c=ccc">Preview</a></td>
+  </tr>
+  <tr>
+    <td class="date"><div><a href="/in/soccer/girls/match/northwood-nappanee-vs-tippecanoe-valley-akron/10-7-2026/?c=ddd">10/7</a><div class="time">6:00pm</div></div></td>
+    <td><span>vs</span><a href="/in/akron/tippecanoe-valley-vikings/soccer/girls/">Tippecanoe Valley</a><span>**</span></td>
+    <td><span class="score">W 12-0</span><a href="/in/soccer/girls/match/northwood-nappanee-vs-tippecanoe-valley-akron/10-7-2026/?c=ddd">Box Score</a></td>
+  </tr>
+</tbody></table>
+</body></html>

@@ -504,3 +504,120 @@ describe("review fixes", () => {
     expect(games.map((g) => g.opponent)).toEqual(["Lakeland"]);
   });
 });
+
+describe("schedule DOM rows where the date and time share a cell", () => {
+  // Reproduced from a live backfill log. `.text()` glues the two together, and
+  // so does joining the row's immediate children, because both sit inside the
+  // same <td>: "9/3" + "6:45pm" -> "9/36:45pm".
+  const { games } = parseSchedulePage(fixture("schedule-dom-nested.html"), "26-27");
+
+  it("parses every row instead of dropping the single-digit days", () => {
+    // 9/3 -> day 36, 9/5 -> day 51, 10/7 -> day 76 before the fix.
+    expect(games).toHaveLength(4);
+    expect(games.map((g) => g.isoDate)).toEqual([
+      "2026-09-03",
+      "2026-09-05",
+      "2026-09-12",
+      "2026-10-07",
+    ]);
+  });
+
+  it("keeps the kickoff time on every row", () => {
+    expect(games.map((g) => g.timeText)).toEqual(["6:45pm", "12:30pm", "7:15pm", "6:00pm"]);
+  });
+
+  it("keeps the time on a two-digit day, which used to parse but lose it", () => {
+    // "9/12" + "7:15pm" -> "9/127:15pm": the date matched, then the time's
+    // lookbehind saw the "2" and refused. A valid-looking row, no kickoff.
+    const g = games.find((g) => g.isoDate === "2026-09-12")!;
+    expect(g.timeText).toBe("7:15pm");
+  });
+
+  it("still reads opponent, venue, conference flag and score", () => {
+    const northridge = games[0];
+    expect(northridge.opponent).toBe("Northridge");
+    expect(northridge.homeAway).toBe("away");
+    expect(northridge.isConference).toBe(true);
+
+    const valley = games[3];
+    expect(valley.opponent).toBe("Tippecanoe Valley");
+    expect(valley.homeAway).toBe("home");
+    expect(valley.result).toBe("W");
+    expect(valley.teamScore).toBe(12);
+    expect(valley.opponentScore).toBe(0);
+  });
+
+  it("does not treat a time as a score", () => {
+    // "12:30pm" must not become 12-30.
+    const culver = games[1];
+    expect(culver.teamScore).toBeNull();
+    expect(culver.result).toBeNull();
+  });
+});
+
+describe("MaxPreps prints the winner's score first", () => {
+  // Rows copied from the live 25-26 varsity schedule. "L 2-0" cannot mean we
+  // scored 2 and lost — that is what proves the convention.
+  const html = `<table><tbody>
+    <tr><td><div><a href="/in/soccer/girls/match/a-vs-northwood-nappanee/8-16-2025/?c=1">8/16</a><div>11:50am</div></div></td>
+        <td><span>@</span><a href="/in/syracuse/wawasee/soccer/girls/">Wawasee</a><span>***</span></td>
+        <td><span>W 8-0</span><a href="/in/soccer/girls/match/a-vs-northwood-nappanee/8-16-2025/?c=1">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/b-vs-northwood-nappanee/8-25-2025/?c=2">8/25</a><div>7:30pm</div></div></td>
+        <td><span>vs</span><a href="/in/topeka/westview/soccer/girls/">Westview</a></td>
+        <td><span>L 2-0</span><a href="/in/soccer/girls/match/b-vs-northwood-nappanee/8-25-2025/?c=2">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/c-vs-northwood-nappanee/8-28-2025/?c=3">8/28</a><div>7:15pm</div></div></td>
+        <td><span>vs</span><a href="/in/warsaw/warsaw-tigers/soccer/girls/">Warsaw</a><span>*</span></td>
+        <td><span>L 4-1</span><a href="/in/soccer/girls/match/c-vs-northwood-nappanee/8-28-2025/?c=3">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/d-vs-northwood-nappanee/9-6-2025/?c=4">9/6</a><div>12:30pm</div></div></td>
+        <td><span>vs</span><a href="/in/culver/culver-academies/soccer/girls/">Culver Academies</a></td>
+        <td><span>T 1-1</span><a href="/in/soccer/girls/match/d-vs-northwood-nappanee/9-6-2025/?c=4">Box Score</a></td></tr>
+    <tr><td><div><a href="/in/soccer/girls/match/e-vs-northwood-nappanee/10-7-2025/?c=5">10/7</a><div>6:00pm</div></div></td>
+        <td><span>vs</span><a href="/in/akron/tippecanoe-valley/soccer/girls/">Tippecanoe Valley</a><span>**</span></td>
+        <td><span>W 12-0</span><a href="/in/soccer/girls/match/e-vs-northwood-nappanee/10-7-2025/?c=5">Box Score</a></td></tr>
+  </tbody></table>`;
+  const { games } = parseSchedulePage(html, "25-26");
+
+  it("keeps our own score on a win", () => {
+    const w = games.find((g) => g.opponent === "Wawasee")!;
+    expect([w.teamScore, w.opponentScore]).toEqual([8, 0]);
+  });
+
+  it("does not credit us with the opponent's goals on a loss", () => {
+    const westview = games.find((g) => g.opponent === "Westview")!;
+    expect(westview.result).toBe("L");
+    expect([westview.teamScore, westview.opponentScore]).toEqual([0, 2]);
+
+    const warsaw = games.find((g) => g.opponent === "Warsaw")!;
+    expect([warsaw.teamScore, warsaw.opponentScore]).toEqual([1, 4]);
+  });
+
+  it("never records a loss we outscored, or a clean sheet we didn't keep", () => {
+    for (const g of games) {
+      if (g.result === "L") expect(g.teamScore!).toBeLessThan(g.opponentScore!);
+      if (g.result === "W") expect(g.teamScore!).toBeGreaterThan(g.opponentScore!);
+      if (g.result === "T") expect(g.teamScore).toBe(g.opponentScore);
+    }
+    // Only the two wins are shutouts; the losses conceded 2 and 4.
+    expect(games.filter((g) => g.opponentScore === 0)).toHaveLength(2);
+  });
+
+  it("totals match the season the page reports", () => {
+    const gf = games.reduce((n, g) => n + (g.teamScore ?? 0), 0);
+    const ga = games.reduce((n, g) => n + (g.opponentScore ?? 0), 0);
+    expect([gf, ga]).toEqual([22, 7]);
+  });
+
+  it("reads the asterisk legend: * conference, ** playoff, *** tournament", () => {
+    const by = (name: string) => games.find((g) => g.opponent === name)!;
+    expect(by("Warsaw").isConference).toBe(true);
+    expect(by("Warsaw").isPlayoff).toBe(false);
+
+    expect(by("Tippecanoe Valley").isPlayoff).toBe(true);
+    expect(by("Tippecanoe Valley").isConference).toBe(false);
+
+    expect(by("Wawasee").isTournament).toBe(true);
+    expect(by("Wawasee").isConference).toBe(false);
+
+    expect(by("Westview").isConference).toBe(false);
+  });
+});
