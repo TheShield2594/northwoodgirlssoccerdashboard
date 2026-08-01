@@ -621,3 +621,25 @@ describe("MaxPreps prints the winner's score first", () => {
     expect(by("Westview").isConference).toBe(false);
   });
 });
+
+describe("a two-digit-looking date that is really day + hour", () => {
+  // "10/2" + "6:00pm" collapses to "10/26:00pm", and the date regex takes
+  // "10/26" — a real calendar day, so nothing is skipped and nothing warns.
+  // The game just lands 24 days late with no kickoff. 2025-10-26 was a
+  // Sunday; IHSAA soccer doesn't play Sundays.
+  const html = `<table><tbody><tr>
+    <td><div><a href="/in/soccer/girls/match/wawasee-vs-northwood/10-2-2025/?c=z">10/2</a><div>6:00pm</div></div></td>
+    <td><span>vs</span><a href="/in/syracuse/wawasee-warriors/soccer/girls/">Wawasee</a></td>
+    <td><span>W 7-0</span><a href="/in/soccer/girls/match/wawasee-vs-northwood/10-2-2025/?c=z">Box Score</a></td>
+  </tr></tbody></table>`;
+  const { games } = parseSchedulePage(html, "25-26");
+
+  it("keeps the real date instead of absorbing the hour into the day", () => {
+    expect(games[0].isoDate).toBe("2025-10-02");
+    expect(games[0].timeText).toBe("6:00pm");
+  });
+
+  it("detects a home game, which the glued 'vsWawasee' used to hide", () => {
+    expect(games[0].homeAway).toBe("home");
+  });
+});
