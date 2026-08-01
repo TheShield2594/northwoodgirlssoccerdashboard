@@ -211,6 +211,18 @@ It's season-scoped and refuses to prune a roster it parsed as empty, so a
 failed fetch can't wipe history. Check the run's warnings first — pruning
 against a bad parse just replaces stale wrong rows with fresh wrong ones.
 
+## Is what I'm looking at real?
+
+The dashboard serves a **fictional demo dataset** whenever the `games` table
+is empty, so the UI is explorable before the first scrape. Pages show a pink
+"Sample data" banner when that happens — if you see it, none of the players,
+opponents or scores on screen came from MaxPreps.
+
+The check is `SELECT 1 FROM games LIMIT 1`, so it is all-or-nothing on games.
+A database with games but no rosters is *real* data and gets no banner; the
+Players page explains that the roster is empty rather than rendering a blank
+table.
+
 ## Repo layout
 
 ```text
