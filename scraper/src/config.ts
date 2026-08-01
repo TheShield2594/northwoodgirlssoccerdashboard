@@ -1,15 +1,22 @@
-export type TeamLevel = "varsity" | "jv";
+export type TeamLevel = "varsity" | "jv" | "freshman";
 
-// The team's root page for each level. Varsity is the bare URL; JV lives
-// under a /jv/ segment. If NorthWood ever fields a freshman squad, add
-// "freshman" here and to TEAM_LEVELS — everything downstream treats level
-// as data, not a hardcoded pair.
+// The team's root page for each level. Varsity is the bare URL; the others
+// live under a level segment. These are only the FALLBACK: the real list of
+// levels and seasons is discovered from the site's own season picker (see
+// parse/seasons.ts), which knows exactly which combinations exist.
 const LEVEL_BASE: Record<TeamLevel, string> = {
   varsity: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls",
   jv: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/jv",
+  freshman: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/freshman",
 };
 
-export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv"];
+// NorthWood fields a freshman squad as of 26-27. Levels that don't exist for
+// a given season just 404 and are skipped, so listing all three is free.
+export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv", "freshman"];
+
+/** The varsity team's current-season home page — the one that carries the
+ *  season picker every level and year is discovered from. */
+export const teamHomeUrl = () => `${LEVEL_BASE.varsity}/`;
 
 // The school-name hint used to tell NorthWood's tables/rows apart from the
 // opponent's on match pages.

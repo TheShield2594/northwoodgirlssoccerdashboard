@@ -10,7 +10,9 @@ import {
   statsUrl,
   seasonSlugs,
 } from "./config.js";
+import { teamHomeUrl } from "./config.js";
 import { fetchHtml } from "./http.js";
+import { DiscoveredSeason, pageUrlFor, parseSeasonPicker } from "./parse/seasons.js";
 import type { ParseSource } from "./parse/nextdata.js";
 import { parseSchedulePage } from "./parse/schedule.js";
 import { parseRosterPage } from "./parse/roster.js";
@@ -52,8 +54,38 @@ function warnIfGuessing(what: string, source: ParseSource): void {
   );
 }
 
-async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void> {
-  const schedUrl = scheduleUrl(level, seasonSlug);
+/** A season+level to scrape, with the exact URLs for its three pages. */
+interface ScrapeTarget {
+  level: string;
+  seasonSlug: string;
+  schedule: string;
+  roster: string;
+  stats: string;
+}
+
+function targetFromDiscovery(s: DiscoveredSeason): ScrapeTarget {
+  return {
+    level: s.level,
+    seasonSlug: s.seasonSlug,
+    schedule: pageUrlFor(s, "schedule"),
+    roster: pageUrlFor(s, "roster"),
+    stats: pageUrlFor(s, "stats"),
+  };
+}
+
+function targetFromConfig(level: TeamLevel, seasonSlug: string): ScrapeTarget {
+  return {
+    level,
+    seasonSlug,
+    schedule: scheduleUrl(level, seasonSlug),
+    roster: rosterUrl(level, seasonSlug),
+    stats: statsUrl(level, seasonSlug),
+  };
+}
+
+async function scrapeSeason(target: ScrapeTarget): Promise<void> {
+  const { level, seasonSlug } = target;
+  const schedUrl = target.schedule;
   const schedHtml = await fetchHtml(schedUrl);
   if (!schedHtml) {
     console.log(
@@ -110,7 +142,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   // Roster
   const keptPlayerSeasonIds: number[] = [];
   let rosterOk = false;
-  const rosterUrlForSeason = rosterUrl(level, seasonSlug);
+  const rosterUrlForSeason = target.roster;
   const rosterHtml = await fetchHtml(rosterUrlForSeason);
   if (!rosterHtml) {
     console.warn(`[scrape] ${level} ${seasonSlug}: roster page unreachable (${rosterUrlForSeason})`);
@@ -121,11 +153,25 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
       for (const entry of roster.entries) {
         keptPlayerSeasonIds.push(await upsertRosterEntry(seasonId, entry));
       }
-      console.log(`[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}`);
-      if (roster.entries.length === 0) {
-        // Silent zero here is what let an entire season import with no players.
+      const expected = roster.expectedCount;
+      console.log(
+        `[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}` +
+          (expected !== null ? ` (page reports ${expected} athletes)` : "")
+      );
+      // Distinguish the two ways a roster comes back empty. Only one is a bug.
+      if (expected === 0) {
+        console.log(
+          `[scrape]   note: MaxPreps lists no athletes for this team yet — nothing to import, not a parser failure`
+        );
+      } else if (roster.entries.length === 0) {
+        console.error(
+          `[scrape]   ERROR: roster page fetched but 0 players parsed (${rosterUrlForSeason})` +
+            (expected !== null ? ` while the page reports ${expected} athletes` : "") +
+            ` — the parser needs re-aiming; run \`npm run inspect\` on this page`
+        );
+      } else if (expected !== null && roster.entries.length !== expected) {
         console.warn(
-          `[scrape]   WARNING: roster page fetched but 0 players parsed (${rosterUrlForSeason}) — run \`npm run verify ${level} ${seasonSlug}\``
+          `[scrape]   WARNING: parsed ${roster.entries.length} players but the page reports ${expected}`
         );
       }
       warnIfGuessing(`${level} ${seasonSlug} roster`, roster.source);
@@ -139,7 +185,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   }
 
   // Season aggregate stats
-  const statsHtml = await fetchHtml(statsUrl(level, seasonSlug));
+  const statsHtml = await fetchHtml(target.stats);
   if (statsHtml) {
     try {
       const stats = parseStatsPage(statsHtml);
@@ -182,23 +228,51 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   }
 }
 
-async function runFullScrape(): Promise<void> {
-  // Resolved per run, never at import: this process outlives the July 1
-  // season rollover, and a frozen "current season" silently scrapes the
-  // wrong year (see config.ts).
+/**
+ * What to scrape this run. Preferred source is the site's own season picker,
+ * which states every level and year that actually exists (and their URLs);
+ * the generated slug list is only the fallback for when that page can't be
+ * read. Either way it is resolved per run, never at import — this process
+ * outlives the July 1 rollover.
+ */
+async function planRun(): Promise<ScrapeTarget[]> {
   const current = currentSeasonSlug();
-  const slugs = BACKFILL ? seasonSlugs() : [current, previousSeasonSlug()];
+  const wanted = new Set([current, previousSeasonSlug()]);
+
+  const homeHtml = await fetchHtml(teamHomeUrl());
+  const discovered = homeHtml ? parseSeasonPicker(homeHtml) : [];
+
+  if (discovered.length > 0) {
+    const usable = discovered.filter((s) => s.isPublished);
+    const chosen = BACKFILL ? usable : usable.filter((s) => wanted.has(s.seasonSlug));
+    const levels = [...new Set(usable.map((s) => s.level))].sort();
+    console.log(
+      `[run] discovered ${usable.length} published season/level combos from the site's season picker ` +
+        `(levels: ${levels.join(", ")}); scraping ${chosen.length}`
+    );
+    if (chosen.length > 0) return chosen.map(targetFromDiscovery);
+    console.warn(`[run] discovery found nothing matching ${[...wanted].join(", ")}; using generated slugs`);
+  } else {
+    console.warn(
+      `[run] could not read the season picker from ${teamHomeUrl()} — falling back to generated season slugs`
+    );
+  }
+
+  const slugs = BACKFILL ? seasonSlugs() : [...wanted];
+  return TEAM_LEVELS.flatMap((level) => slugs.map((slug) => targetFromConfig(level, slug)));
+}
+
+async function runFullScrape(): Promise<void> {
+  const targets = await planRun();
   console.log(
-    `[run] scraping ${TEAM_LEVELS.join("+")} x ${slugs.length} season(s) [${slugs.join(", ")}]` +
-      `${BACKFILL ? " (backfill)" : ""}${PRUNE ? " (prune)" : ""}; current season is ${current}`
+    `[run] scraping ${targets.length} season/level target(s)` +
+      `${BACKFILL ? " (backfill)" : ""}${PRUNE ? " (prune)" : ""}; current season is ${currentSeasonSlug()}`
   );
-  for (const level of TEAM_LEVELS) {
-    for (const slug of slugs) {
-      try {
-        await scrapeSeason(level, slug);
-      } catch (err) {
-        console.error(`[run] failed on ${level} ${slug}:`, err);
-      }
+  for (const target of targets) {
+    try {
+      await scrapeSeason(target);
+    } catch (err) {
+      console.error(`[run] failed on ${target.level} ${target.seasonSlug}:`, err);
     }
   }
   console.log("[run] done");

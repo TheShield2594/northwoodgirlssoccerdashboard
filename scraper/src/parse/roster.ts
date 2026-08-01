@@ -20,17 +20,44 @@ export interface ParsedRosterEntry {
 export interface RosterParseResult {
   entries: ParsedRosterEntry[];
   source: ParseSource;
+  /**
+   * How many athletes the page itself says it has, when it says so.
+   *
+   * MaxPreps ships a `countData.athleteCount` alongside the roster. It is the
+   * difference between the two ways a roster comes back empty: 0 means the
+   * coach has not entered a roster yet (a 26-27 page in August legitimately
+   * has none), while a positive number we failed to match means the parser
+   * is broken. Without it, both look identical in the logs.
+   */
+  expectedCount: number | null;
 }
 
 /** Parse a MaxPreps roster page: every embedded-JSON layer first, then the
  *  DOM table fallback. */
 export function parseRosterPage(html: string): RosterParseResult {
-  for (const { kind, root } of extractJsonSources(html)) {
+  const sources = extractJsonSources(html);
+
+  let expectedCount: number | null = null;
+  for (const { root } of sources) {
+    expectedCount = findAthleteCount(root);
+    if (expectedCount !== null) break;
+  }
+
+  for (const { kind, root } of sources) {
     const entries = parseFromNextData(root);
-    if (entries.length > 0) return { entries, source: kind };
+    if (entries.length > 0) return { entries, source: kind, expectedCount };
   }
   const entries = parseFromDom(html);
-  return { entries, source: entries.length > 0 ? "dom" : "none" };
+  return { entries, source: entries.length > 0 ? "dom" : "none", expectedCount };
+}
+
+/** The page's own athlete tally, from its `countData` block. */
+function findAthleteCount(root: unknown): number | null {
+  const found = deepFindObjects(root, (obj) => {
+    const v = pick(obj, "athleteCount");
+    return typeof v === "number" && Number.isInteger(v) && v >= 0;
+  });
+  return found.length > 0 ? (pick(found[0].value, "athleteCount") as number) : null;
 }
 
 // ---------------------------------------------------------------- nextdata

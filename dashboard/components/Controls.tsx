@@ -5,6 +5,7 @@
  * so it survives navigation and is shareable/bookmarkable.
  */
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { levelLabel } from "@/lib/format";
 import type { Level, SeasonInfo } from "@/lib/types";
 
 export default function Controls({
@@ -20,7 +21,10 @@ export default function Controls({
   const pathname = usePathname();
   const params = useSearchParams();
 
-  const levels: Level[] = ["varsity", "jv"];
+  // Driven by what the scraper found, not a hardcoded pair, so a newly
+  // added squad shows up on its own. Fixed display order.
+  const ORDER: Level[] = ["varsity", "jv", "freshman"];
+  const levels = ORDER.filter((l) => seasons.some((s) => s.level === l));
   const seasonsForLevel = seasons.filter((s) => s.level === level);
 
   function push(nextLevel: Level, nextSeason: string) {
@@ -50,7 +54,7 @@ export default function Controls({
             aria-pressed={l === level}
             onClick={() => switchLevel(l)}
           >
-            {l === "jv" ? "JV" : "Varsity"}
+            {levelLabel(l)}
           </button>
         ))}
       </div>

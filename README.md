@@ -146,6 +146,11 @@ Things `verify` may surface:
   `pageProps` key list shows where the contest array actually lives.
 - **No box score lines** — many games simply have none entered on MaxPreps;
   try another game's URL before assuming the parser is wrong.
+- **0 roster entries** — check whether the log says `page reports 0 athletes`.
+  MaxPreps ships its own `athleteCount`, so an empty roster is reported as
+  either "nothing to import" (the coach hasn't entered one — normal for a
+  season that just started) or an `ERROR` naming the mismatch. Only the
+  second is a parser bug.
 - **`embedded JSON layers: NONE`** — MaxPreps changed how it ships page data.
   Capture the page (below) and re-aim the parser against it; do not trust
   anything the DOM fallback imported in the meantime.
@@ -233,6 +238,21 @@ dashboard/
   lib/demo.ts               # bannered sample dataset (fictional players)
   lib/data.ts               # Postgres reads with automatic demo fallback
 ```
+
+## Which seasons get scraped
+
+The scraper reads MaxPreps' own season picker off the team home page. That
+payload states every level and year that exists, plus the canonical URL for
+each, so nothing is guessed:
+
+```
+[run] discovered 71 published season/level combos from the site's season picker
+      (levels: freshman, jv, varsity); scraping 6
+```
+
+This is what makes a freshman squad appear on its own (NorthWood added one in
+26-27) and what removes the bare-vs-slugged URL problem below. If the picker
+can't be read, the run falls back to generated slugs and says so.
 
 ## Season rollover
 

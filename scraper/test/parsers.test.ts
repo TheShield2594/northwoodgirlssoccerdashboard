@@ -5,6 +5,7 @@ import { parseSchedulePage, normalizeDate, resolveGameDate } from "../src/parse/
 import { parseRosterPage } from "../src/parse/roster.js";
 import { normalizePlayerName } from "../src/parse/names.js";
 import { currentSeasonSlug, previousSeasonSlug, seasonSlugs } from "../src/config.js";
+import { pageUrlFor, parseSeasonPicker } from "../src/parse/seasons.js";
 import { normalizeTimeText, timeFromDateTime } from "../src/parse/datetime.js";
 import { parseStatsPage, parseTablesFromDom } from "../src/parse/stats.js";
 import { parseBoxScorePage } from "../src/parse/boxscore.js";
@@ -381,5 +382,60 @@ describe("season rollover", () => {
     // current season in August — fetching the new season's page from the
     // bare URL and filing its games under the old season.
     expect(currentSeasonSlug(jun30)).not.toBe(currentSeasonSlug(jul01));
+  });
+});
+
+describe("roster parser — a genuinely empty roster (real 26-27 page)", () => {
+  const { entries, expectedCount } = parseRosterPage(fixture("roster-empty-real.html"));
+
+  it("reports the page's own athlete count", () => {
+    // 0 parsed AND 0 expected is "no roster entered yet", not a broken
+    // parser. Without the count the two are indistinguishable in the log.
+    expect(expectedCount).toBe(0);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("does not mistake the Staff (4) tab for players", () => {
+    expect(entries).toHaveLength(0);
+  });
+});
+
+describe("season discovery from the site's own picker", () => {
+  const seasons = parseSeasonPicker(fixture("roster-empty-real.html"));
+
+  it("finds every level, including a freshman squad we never hardcoded", () => {
+    const levels = [...new Set(seasons.map((s) => s.level))].sort();
+    expect(levels).toEqual(["freshman", "jv", "varsity"]);
+  });
+
+  it("keeps one entry per level+season", () => {
+    const keys = seasons.map((s) => `${s.level}:${s.seasonSlug}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("builds page URLs for the current season off the bare team URL", () => {
+    const v2627 = seasons.find((s) => s.level === "varsity" && s.seasonSlug === "26-27")!;
+    expect(pageUrlFor(v2627, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/roster/"
+    );
+  });
+
+  it("builds page URLs for a historical season off its slugged URL", () => {
+    const v2526 = seasons.find((s) => s.level === "varsity" && s.seasonSlug === "25-26")!;
+    // The picker points at .../25-26/schedule/; roster must not become
+    // .../25-26/schedule/roster/.
+    expect(pageUrlFor(v2526, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/25-26/roster/"
+    );
+    expect(pageUrlFor(v2526, "stats")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/25-26/stats/"
+    );
+  });
+
+  it("handles the JV level's extra path segment", () => {
+    const jv = seasons.find((s) => s.level === "jv" && s.seasonSlug === "25-26")!;
+    expect(pageUrlFor(jv, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/jv/25-26/roster/"
+    );
   });
 });
