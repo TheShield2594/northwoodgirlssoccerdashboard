@@ -169,6 +169,38 @@ describe("stats table parser (DOM)", () => {
   });
 });
 
+describe("stats parser — a labelled tuple grid", () => {
+  const result = parseStatsPage(fixture("stats-nextdata-labelled.html"));
+
+  it("reads the column labels rather than assuming an order", () => {
+    // A stat tuple is all numbers, so unlike a contest or an athlete its
+    // columns can't be identified from the values — 16 is as plausible a
+    // goal count as a games-played. Labels are the only safe anchor.
+    expect(result.source).toBe("nextdata");
+    const noa = result.lines.find((l) => l.playerName === "Noa Weldy")!;
+    expect(noa.stats).toEqual({
+      games_played: 16,
+      goals: 12,
+      assists: 7,
+      points: 31,
+      shots: 44,
+      shots_on_goal: 28,
+    });
+  });
+
+  it("merges a player's field and keeper grids into one line", () => {
+    const savannah = result.lines.find((l) => l.playerName === "Savannah Sipic")!;
+    expect(savannah.stats.goals).toBe(0);
+    expect(savannah.stats.saves).toBe(74);
+    expect(savannah.stats.shutouts).toBe(8);
+    expect(savannah.stats.minutes).toBe(1240);
+  });
+
+  it("does not take the breadcrumb trail for a stat line", () => {
+    expect(result.lines.map((l) => l.playerName)).not.toContain("MaxPreps.com");
+  });
+});
+
 describe("box score parser — __NEXT_DATA__ layer", () => {
   const result = parseBoxScorePage(fixture("boxscore-nextdata.html"), "NorthWood");
 
@@ -387,7 +419,7 @@ describe("season rollover", () => {
 });
 
 describe("roster parser — a genuinely empty roster (real 26-27 page)", () => {
-  const { entries, expectedCount } = parseRosterPage(fixture("roster-empty-real.html"));
+  const { entries, expectedCount, strategy } = parseRosterPage(fixture("roster-empty-real.html"));
 
   it("reports the page's own athlete count", () => {
     // 0 parsed AND 0 expected is "no roster entered yet", not a broken
@@ -403,6 +435,24 @@ describe("roster parser — a genuinely empty roster (real 26-27 page)", () => {
     expect(names).not.toContain("Players");
     expect(names).not.toContain("Staff");
     expect(names.join(" ")).not.toMatch(/staff|players/i);
+  });
+
+  it("does not import the schema.org breadcrumb trail as players", () => {
+    // Each crumb is {"@type":"ListItem","name":"NorthWood","position":3} —
+    // a name plus a position, which is the roster shape exactly. Every
+    // season with no roster was importing four of these (five on JV, which
+    // has an extra level crumb).
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("MaxPreps.com");
+    expect(names).not.toContain("Girls Soccer");
+    expect(names).not.toContain("NorthWood");
+  });
+
+  it("stops at the page's own zero instead of guessing past it", () => {
+    // athleteCount is authoritative. Running the shape-guessing fallbacks
+    // against a page that says it has nobody can only produce false
+    // positives, so the fallbacks don't run at all.
+    expect(strategy).toBe("none");
   });
 });
 
@@ -713,15 +763,23 @@ describe("roster parser — MaxPreps' real athlete-tuple shape", () => {
   // pageProps.athleteData is positional arrays with no name/jersey/position/
   // grade key. The object predicate saw none of them; the handful of entries
   // a run used to report came from unrelated objects in the same payload.
-  const { entries, source, expectedCount } = parseRosterPage(
+  const { entries, source, strategy, expectedCount } = parseRosterPage(
     fixture("roster-nextdata-athletes.html")
   );
 
   it("finds every athlete the page says it has", () => {
     expect(source).toBe("nextdata");
+    expect(strategy).toBe("tuples");
     expect(entries).toHaveLength(8);
     expect(expectedCount).toBe(8);
     expect(entries.length).toBe(expectedCount);
+  });
+
+  it("keeps only the rows belonging to this team-season", () => {
+    // athleteData has nine rows; the ninth carries a different
+    // sportSeasonId. Taking every row is what turned a 23-player 24-25
+    // roster into 38 imported players.
+    expect(entries.map((e) => e.fullName)).not.toContain("Marguerite Prior-Season");
   });
 
   it("reads name, jersey, position and grade", () => {

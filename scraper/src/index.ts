@@ -161,7 +161,8 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
       }
       const expected = roster.expectedCount;
       console.log(
-        `[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}` +
+        `[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ` +
+          `${roster.source}/${roster.strategy}` +
           (expected !== null ? ` (page reports ${expected} athletes)` : "")
       );
       // Distinguish the two ways a roster comes back empty. Only one is a bug.
@@ -204,6 +205,15 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
         console.log(`[scrape]   unmapped stat columns (add to STAT_COLUMN_MAP?): ${stats.unmappedHeaders.join(", ")}`);
       }
       console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
+      // A stats page with no lines is ambiguous in a way a roster page isn't:
+      // there is no `athleteCount` equivalent, so "the coach entered no stats"
+      // and "the parser is aimed wrong" print identically. Say where to look.
+      if (stats.lines.length === 0) {
+        console.log(
+          `[scrape]   note: no stat lines matched — run \`npm run inspect -- <cached stats page>\`` +
+            ` to print the page's tuple shapes and confirm whether it carries any stats at all`
+        );
+      }
       warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
       statsOk = true;
     } catch (err) {

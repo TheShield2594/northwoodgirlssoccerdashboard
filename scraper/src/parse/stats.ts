@@ -90,15 +90,103 @@ export const JSON_FIELD_MAP: Record<string, string> = {
 /** Parse a team season-stats page (aggregate per-player stat lines). */
 export function parseStatsPage(html: string): StatsParseResult {
   for (const { kind, root } of extractJsonSources(html)) {
+    // Labelled tuples first — MaxPreps ships most page data as positional
+    // arrays rather than objects (see schedule.ts / roster.ts).
+    const tuples = parseLabelledTuples(root);
+    if (tuples.lines.length > 0) return { ...tuples, source: kind };
     const lines = parseFromNextData(root);
     if (lines.length > 0) return { lines, source: kind, unmappedHeaders: [] };
   }
   return parseTablesFromDom(html);
 }
 
+// ----------------------------------------------------------- labelled tuples
+
+/**
+ * A stats grid shipped as `{ columns: ["GP","G","A",…], rows: [[…],[…]] }`,
+ * under whatever key names the build happens to use.
+ *
+ * Unlike the roster and schedule tuples, a stat tuple is all numbers, so its
+ * columns cannot be identified from the values — 14 could be games played,
+ * goals, or a jersey. This parser therefore only runs when the payload also
+ * ships the column labels, and it reads the labels rather than assuming an
+ * order. If MaxPreps ships headerless stat tuples, nothing matches here and
+ * we fall through rather than invent a mapping; `npm run inspect` prints the
+ * tuple shape so the offsets can be read off a real page.
+ */
+function findHeaderRow(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  if (!value.every((v) => typeof v === "string")) return null;
+  const headers = (value as string[]).map((h) => h.trim().toUpperCase());
+  const mapped = headers.filter((h) => STAT_COLUMN_MAP[h] !== undefined).length;
+  // Two recognised abbreviations is enough to be a stat header and far too
+  // specific to hit by accident on a list of names or positions.
+  return mapped >= 2 ? headers : null;
+}
+
+const NAME_HEADER = /^(NAME|PLAYER|ATHLETE)S?$|NAME$/;
+
+function parseLabelledTuples(root: unknown): { lines: ParsedStatLine[]; unmappedHeaders: string[] } {
+  const byName = new Map<string, ParsedStatLine>();
+  const unmapped = new Set<string>();
+
+  for (const { value: holder } of deepFindObjects(root, (o) =>
+    Object.values(o).some((v) => findHeaderRow(v) !== null)
+  )) {
+    const headers = Object.values(holder).map(findHeaderRow).find((h) => h !== null);
+    if (!headers) continue;
+
+    // The data rows are the sibling array whose rows are exactly as wide as
+    // the header. Anything narrower or wider is a different grid.
+    const rows = Object.values(holder).find(
+      (v): v is unknown[][] =>
+        Array.isArray(v) &&
+        v.length > 0 &&
+        v.every((r) => Array.isArray(r) && r.length === headers.length)
+    );
+    if (!rows) continue;
+
+    headers.forEach((h) => {
+      if (h && !STAT_COLUMN_MAP[h] && !NAME_HEADER.test(h) && !/^#$|^NO\.?$/.test(h)) {
+        unmapped.add(h);
+      }
+    });
+
+    const nameIdx = headers.findIndex((h) => NAME_HEADER.test(h));
+    for (const row of rows) {
+      const raw =
+        nameIdx >= 0
+          ? asString(row[nameIdx])
+          : asString(row.find((v) => typeof v === "string" && /[A-Za-z]{2,}\s+[A-Za-z]/.test(v)));
+      if (!raw) continue;
+      const playerName = toGivenNameOrder(cleanNameCell(raw));
+      if (!playerName) continue;
+
+      const line: ParsedStatLine = byName.get(playerName) ?? {
+        playerName,
+        jerseyNumber: null,
+        stats: {},
+      };
+      headers.forEach((header, i) => {
+        const statName = STAT_COLUMN_MAP[header];
+        if (!statName) return;
+        const n = asNumber(row[i]);
+        if (n !== null) line.stats[statName] = n;
+      });
+      if (Object.keys(line.stats).length > 0) byName.set(playerName, line);
+    }
+  }
+
+  return { lines: [...byName.values()], unmappedHeaders: [...unmapped] };
+}
+
 // ---------------------------------------------------------------- nextdata
 
 function looksLikeStatRow(obj: Record<string, unknown>): boolean {
+  // schema.org nodes (`@type: "ListItem"`, breadcrumbs) carry a `name` and
+  // could only ever be false positives — see roster.ts, where they were
+  // being imported as players.
+  if ("@type" in obj || "@context" in obj) return false;
   const name =
     asString(pick(obj, "athleteName", "playerName", "fullName", "name")) !== null ||
     (asString(pick(obj, "firstName")) !== null && asString(pick(obj, "lastName")) !== null);

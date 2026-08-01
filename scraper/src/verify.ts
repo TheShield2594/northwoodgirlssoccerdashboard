@@ -13,7 +13,7 @@
  */
 import { TEAM_NAME_HINT, TeamLevel, currentSeasonSlug, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
 import { fetchHtml } from "./http.js";
-import { extractJsonSources, extractNextData } from "./parse/nextdata.js";
+import { describeTupleArrays, extractJsonSources, extractNextData } from "./parse/nextdata.js";
 import { parseSchedulePage } from "./parse/schedule.js";
 import { parseRosterPage } from "./parse/roster.js";
 import { parseStatsPage } from "./parse/stats.js";
@@ -29,6 +29,17 @@ const season = args[1] ?? currentSeasonSlug();
 function dumpLayers(html: string) {
   const kinds = extractJsonSources(html).map((s) => s.kind);
   console.log(`  embedded JSON layers: ${kinds.length ? kinds.join(", ") : "NONE — DOM fallback is the only layer"}`);
+}
+
+/** Positional-tuple shapes, the thing a parser actually has to be aimed at.
+ *  MaxPreps ships arrays, not objects, so key names alone say nothing. */
+function dumpTupleShapes(html: string) {
+  for (const { kind, root } of extractJsonSources(html)) {
+    const shapes = describeTupleArrays(root);
+    if (shapes.length === 0) continue;
+    console.log(`  ${kind} tuple arrays:`);
+    for (const line of shapes) console.log(line);
+  }
 }
 
 function dumpNextDataShape(html: string) {
@@ -105,7 +116,7 @@ async function main() {
     dumpLayers(rosterHtml);
     const roster = parseRosterPage(rosterHtml);
     console.log(
-      `  parsed ${roster.entries.length} entries via ${roster.source}` +
+      `  parsed ${roster.entries.length} entries via ${roster.source}/${roster.strategy}` +
         (roster.expectedCount !== null ? `; page reports ${roster.expectedCount} athletes` : "")
     );
     for (const e of roster.entries.slice(0, 5)) {
@@ -133,7 +144,10 @@ async function main() {
     console.log(`  parsed ${stats.lines.length} stat lines via ${stats.source}`);
     for (const l of stats.lines.slice(0, 5)) console.log(`    ${l.playerName}:`, l.stats);
     if (stats.unmappedHeaders.length) console.log("  unmapped headers:", stats.unmappedHeaders.join(", "));
-    if (stats.lines.length === 0) dumpNextDataShape(statsHtml);
+    if (stats.lines.length === 0) {
+      dumpNextDataShape(statsHtml);
+      dumpTupleShapes(statsHtml);
+    }
   } else {
     console.log("  fetch failed");
   }

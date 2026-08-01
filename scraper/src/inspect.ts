@@ -17,7 +17,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { currentSeasonSlug, TEAM_NAME_HINT } from "./config.js";
-import { extractJsonSources } from "./parse/nextdata.js";
+import { describeTupleArrays, extractJsonSources } from "./parse/nextdata.js";
 import { parseSchedulePage } from "./parse/schedule.js";
 import { parseRosterPage } from "./parse/roster.js";
 import { parseStatsPage } from "./parse/stats.js";
@@ -95,9 +95,9 @@ if (kind === "schedule") {
   }
   if (games.length > 10) console.log(`     … ${games.length - 10} more`);
 } else if (kind === "roster") {
-  const { entries, source, expectedCount } = parseRosterPage(html);
+  const { entries, source, strategy, expectedCount } = parseRosterPage(html);
   console.log(
-    `   ${entries.length} roster entries via ${source}` +
+    `   ${entries.length} roster entries via ${source}/${strategy}` +
       (expectedCount !== null ? `; page reports ${expectedCount} athletes` : "")
   );
   for (const e of entries) {
@@ -109,6 +109,16 @@ if (kind === "schedule") {
   console.log(`   ${res.lines.length} stat lines via ${res.source}`);
   for (const l of res.lines.slice(0, 10)) console.log(`     ${l.playerName}:`, l.stats);
   if (res.unmappedHeaders.length) console.log(`   unmapped headers: ${res.unmappedHeaders.join(", ")}`);
+  // Nothing matched: print the page's positional-tuple shapes. That dump is
+  // what a parser gets aimed at — see parse/nextdata.ts describeTupleArrays.
+  if (res.lines.length === 0) {
+    for (const { kind: layer, root } of sources) {
+      const shapes = describeTupleArrays(root);
+      if (shapes.length === 0) continue;
+      console.log(`\n   ${layer} tuple arrays:`);
+      for (const line of shapes) console.log(line);
+    }
+  }
 }
 
 if (sources.length === 0) {

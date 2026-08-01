@@ -18,9 +18,16 @@ export interface ParsedRosterEntry {
   athleteUrl: string | null;
 }
 
+/** Which extraction actually produced the entries — `source` only says which
+ *  JSON layer was read, and "nextdata" covered both the real athlete tuples
+ *  and the shape-guessing fallback, so a bad run couldn't be told from a good
+ *  one in the logs. */
+export type RosterStrategy = "tuples" | "objects" | "dom" | "none";
+
 export interface RosterParseResult {
   entries: ParsedRosterEntry[];
   source: ParseSource;
+  strategy: RosterStrategy;
   /**
    * How many athletes the page itself says it has, when it says so.
    *
@@ -33,35 +40,73 @@ export interface RosterParseResult {
   expectedCount: number | null;
 }
 
+/**
+ * The page's own `countData` block: how many athletes it claims, and the ids
+ * of the exact team-season it is showing. Both ids matter — `athleteData`
+ * carries them on every row, which is what lets us keep only the rows that
+ * belong to THIS page (see `parseAthleteTuples`).
+ */
+interface RosterScope {
+  athleteCount: number | null;
+  teamId: string | null;
+  sportSeasonId: string | null;
+}
+
 /** Parse a MaxPreps roster page: every embedded-JSON layer first, then the
  *  DOM table fallback. */
 export function parseRosterPage(html: string): RosterParseResult {
   const sources = extractJsonSources(html);
 
-  let expectedCount: number | null = null;
+  let scope: RosterScope = { athleteCount: null, teamId: null, sportSeasonId: null };
   for (const { root } of sources) {
-    expectedCount = findAthleteCount(root);
-    if (expectedCount !== null) break;
+    scope = findRosterScope(root);
+    if (scope.athleteCount !== null) break;
+  }
+  const expectedCount = scope.athleteCount;
+
+  // The page states its own athlete count, so a 0 is an answer, not a gap.
+  // Running the shape-guessing fallbacks anyway is how "no roster yet" pages
+  // ended up importing four or five players: the breadcrumb trail
+  // ("MaxPreps.com", "Girls Soccer", "NorthWood", …) is a schema.org
+  // ItemList whose entries carry a `name` and a `position`, which is exactly
+  // what a roster entry looks like from the outside.
+  if (expectedCount === 0) {
+    return { entries: [], source: "none", strategy: "none", expectedCount };
   }
 
   for (const { kind, root } of sources) {
     // MaxPreps' own shape first: positional athlete tuples (see below).
-    const tuples = parseAthleteTuples(root);
-    if (tuples.length > 0) return { entries: tuples, source: kind, expectedCount };
+    const tuples = parseAthleteTuples(root, scope);
+    if (tuples.length > 0) {
+      return { entries: tuples, source: kind, strategy: "tuples", expectedCount };
+    }
     const entries = parseFromNextData(root);
-    if (entries.length > 0) return { entries, source: kind, expectedCount };
+    if (entries.length > 0) {
+      return { entries, source: kind, strategy: "objects", expectedCount };
+    }
   }
   const entries = parseFromDom(html);
-  return { entries, source: entries.length > 0 ? "dom" : "none", expectedCount };
+  return {
+    entries,
+    source: entries.length > 0 ? "dom" : "none",
+    strategy: entries.length > 0 ? "dom" : "none",
+    expectedCount,
+  };
 }
 
-/** The page's own athlete tally, from its `countData` block. */
-function findAthleteCount(root: unknown): number | null {
+/** The page's own `countData` block. */
+function findRosterScope(root: unknown): RosterScope {
   const found = deepFindObjects(root, (obj) => {
     const v = pick(obj, "athleteCount");
     return typeof v === "number" && Number.isInteger(v) && v >= 0;
   });
-  return found.length > 0 ? (pick(found[0].value, "athleteCount") as number) : null;
+  if (found.length === 0) return { athleteCount: null, teamId: null, sportSeasonId: null };
+  const obj = found[0].value;
+  return {
+    athleteCount: pick(obj, "athleteCount") as number,
+    teamId: asString(pick(obj, "teamId")),
+    sportSeasonId: asString(pick(obj, "sportSeasonId")),
+  };
 }
 
 // ------------------------------------------------------------ athlete tuples
@@ -135,12 +180,42 @@ function readAthleteRow(row: unknown[]): ParsedRosterEntry | null {
   };
 }
 
-export function parseAthleteTuples(root: unknown): ParsedRosterEntry[] {
+/**
+ * Every athlete row carries the team and sport-season it belongs to, as the
+ * same two guids the page publishes in `countData`:
+ *
+ *   … , teamId, sportSeasonId, null, …, url, positions, name, …
+ *
+ * They are load-bearing. `athleteData` is not always just this page's roster
+ * — on several past seasons it came back with substantially more rows than
+ * the page's own `athleteCount`, which is how 24-25 imported 38 players for
+ * a 23-player team. Matching both ids keeps the rows this page is actually
+ * about and drops whatever else is riding along. The check is by value, not
+ * by index, so it survives a column being added to the tuple.
+ */
+function rowBelongsTo(row: unknown[], scope: RosterScope): boolean {
+  if (scope.teamId === null && scope.sportSeasonId === null) return true; // nothing to check against
+  for (const id of [scope.teamId, scope.sportSeasonId]) {
+    if (id !== null && !row.includes(id)) return false;
+  }
+  return true;
+}
+
+export function parseAthleteTuples(
+  root: unknown,
+  scope: RosterScope = { athleteCount: null, teamId: null, sportSeasonId: null }
+): ParsedRosterEntry[] {
   const entries: ParsedRosterEntry[] = [];
   const seen = new Set<string>();
+  let outOfScope = 0;
+
   for (const { value } of deepFindObjects(root, (o) => Array.isArray(pick(o, "athleteData")))) {
     for (const row of pick(value, "athleteData") as unknown[]) {
       if (!Array.isArray(row)) continue;
+      if (!rowBelongsTo(row, scope)) {
+        outOfScope++;
+        continue;
+      }
       const entry = readAthleteRow(row);
       if (entry && !seen.has(entry.fullName)) {
         seen.add(entry.fullName);
@@ -148,13 +223,36 @@ export function parseAthleteTuples(root: unknown): ParsedRosterEntry[] {
       }
     }
   }
+
+  // Silence here would hide a scope filter that had started eating the real
+  // roster (say, if MaxPreps stopped stamping the ids on each row).
+  if (outOfScope > 0) {
+    console.log(
+      `[roster] ignored ${outOfScope} athlete row(s) belonging to another team-season`
+    );
+  }
   return entries;
 }
 
 // ---------------------------------------------------------------- nextdata
 
+/**
+ * Structured-data nodes are not roster rows, however much they look like one.
+ *
+ * Every MaxPreps page embeds a schema.org BreadcrumbList, and each of its
+ * crumbs is `{"@type":"ListItem","name":"NorthWood","item":…,"position":3}`.
+ * A `name` plus a `position` is precisely the roster shape, so the crumbs
+ * were being imported as players — four of them on a varsity page, five on a
+ * JV page (the extra level segment), on every season whose real roster came
+ * back empty. `@type` is the tell: no athlete record carries one.
+ */
+function isStructuredData(obj: Record<string, unknown>): boolean {
+  return "@type" in obj || "@context" in obj;
+}
+
 /** A roster entry has a person-name shape plus at least one athlete field. */
 function looksLikeRosterEntry(obj: Record<string, unknown>): boolean {
+  if (isStructuredData(obj)) return false;
   const hasName =
     asString(pick(obj, "athleteName", "fullName", "name")) !== null ||
     (asString(pick(obj, "firstName")) !== null && asString(pick(obj, "lastName")) !== null);

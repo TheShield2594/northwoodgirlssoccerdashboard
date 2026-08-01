@@ -115,7 +115,27 @@ JSON layers, in the order they're tried:
 | `dom` | **no JSON matched** — opponent, venue and score are inferred from row text |
 
 Roster pages do the same with `pageProps.athleteData` — see
-`parseAthleteTuples` in `scraper/src/parse/roster.ts`.
+`parseAthleteTuples` in `scraper/src/parse/roster.ts`. Every athlete row
+carries the `teamId` and `sportSeasonId` that `pageProps.countData` also
+publishes, and the parser keeps only the rows matching both: on several past
+seasons `athleteData` came back with far more rows than the page's own
+`athleteCount` (24-25 offered 38 rows for a 23-player team), and taking them
+all imported players who were never on that roster.
+
+`countData.athleteCount` is treated as authoritative in the other direction
+too. When it says 0, no fallback runs at all — the object-shaped and DOM
+fallbacks can only produce false positives against a page with no roster, and
+they did: each page's schema.org breadcrumb trail is a list of
+`{"@type":"ListItem","name":"NorthWood","position":3}` objects, which is a
+name plus a position, which is a roster entry as far as a shape predicate is
+concerned. Four of those were imported on every empty varsity season, five on
+every JV one (JV pages have an extra level crumb).
+
+Stat pages are the one place tuples can't be read positionally: a stat row is
+all numbers, so nothing in the values says which column is goals. The JSON
+path therefore only handles a grid that ships its column labels alongside its
+rows, and reads the labels. **No stats page has been captured yet and every
+season currently parses to 0 lines** — see the stats note under `verify`.
 
 Schedule pages ship `pageProps.contests` as positional **arrays**, not objects
 — there is no `date` key and no `opponent` key in them. Each team row states
@@ -152,6 +172,12 @@ Things `verify` may surface:
 - **Unmapped stat columns** (e.g. a header abbreviation not in
   `STAT_COLUMN_MAP` in `src/parse/stats.ts`) — add the mapping and re-run.
   Unknown columns are skipped, never guessed.
+- **0 stat lines** — currently the case on every season. Unlike the roster,
+  a stats page ships no count of its own, so "the coach entered no stats" and
+  "the parser is aimed wrong" look identical. `verify` and `inspect` now print
+  the page's positional-tuple shapes (`describeTupleArrays`) when nothing
+  matches; that dump is what a parser gets aimed at, and it distinguishes an
+  empty page from a missed one.
 - **0 games parsed** — the shape predicates need re-aiming; the printed
   `pageProps` key list shows where the contest array actually lives.
 - **No box score lines** — many games simply have none entered on MaxPreps;
@@ -177,7 +203,13 @@ docker exec <scraper> npm run inspect -- /cache/<file>.html
 ```
 
 It prints which JSON layers the page has and every row the parser got out,
-which separates "the parser is wrong" from "the page never arrived".
+which separates "the parser is wrong" from "the page never arrived". For a
+roster it also prints which extraction won (`nextdata/tuples` vs
+`nextdata/objects` vs `dom`) — the JSON layer alone doesn't say, and a run
+guessing its way to a plausible-looking roster used to log identically to a
+correct one. When a stats or box-score page yields nothing, it dumps the
+page's positional-tuple arrays slot by slot, which is everything needed to
+aim a parser at them.
 
 ### Capturing real pages
 

@@ -190,6 +190,53 @@ export function extractJsonFragments(text: string, maxFragments = 5000): unknown
   return fragments;
 }
 
+/**
+ * Describe every array-of-arrays in a payload, one line per slot of a sample
+ * row.
+ *
+ * MaxPreps ships its page data as positional tuples — `contests` and
+ * `athleteData` have no `date`/`opponent`/`name`/`grade` keys at all — so a
+ * parser can only be aimed at one by reading an actual row and counting
+ * offsets. This is the tool that does that: point `inspect` at a cached page
+ * and it prints the shape instead of 200 KB of HTML.
+ */
+export function describeTupleArrays(root: unknown, maxArrays = 6, maxDepth = 24): string[] {
+  const out: string[] = [];
+  const seen = new Set<object>();
+
+  function render(row: unknown[]): string[] {
+    return row.map((v, i) => {
+      if (v === null) return `    ${i}: null`;
+      if (Array.isArray(v)) return `    ${i}: array(${v.length})`;
+      if (typeof v === "object") return `    ${i}: object{${Object.keys(v).join(",")}}`;
+      const text = typeof v === "string" ? JSON.stringify(v) : String(v);
+      return `    ${i}: ${typeof v} ${text.length > 70 ? `${text.slice(0, 70)}…` : text}`;
+    });
+  }
+
+  function walk(node: unknown, path: string, depth: number) {
+    if (depth > maxDepth || node === null || typeof node !== "object") return;
+    if (seen.has(node as object)) return;
+    seen.add(node as object);
+
+    if (Array.isArray(node)) {
+      if (out.length < maxArrays * 60 && node.length > 0 && Array.isArray(node[0])) {
+        out.push(`  ${path || "(root)"}: ${node.length} row(s) x ${node[0].length} slot(s)`);
+        out.push(...render(node[0] as unknown[]));
+        return; // the rows themselves are the leaves we came for
+      }
+      node.forEach((item, i) => walk(item, `${path}[${i}]`, depth + 1));
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      walk(value, path ? `${path}.${key}` : key, depth + 1);
+    }
+  }
+
+  walk(root, "", 0);
+  return out;
+}
+
 export interface FoundObject {
   path: string; // dotted path from the root, for diagnostics
   value: Record<string, unknown>;
