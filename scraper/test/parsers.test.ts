@@ -643,3 +643,66 @@ describe("a two-digit-looking date that is really day + hour", () => {
     expect(games[0].homeAway).toBe("home");
   });
 });
+
+describe("schedule parser — MaxPreps' real contest-tuple shape", () => {
+  // pageProps.contests is an array of positional tuples with no "date" or
+  // "opponent" key, which is why the object predicate never matched and every
+  // schedule page fell to the DOM guesser.
+  const { games, source } = parseSchedulePage(fixture("schedule-nextdata-contests.html"), "25-26");
+
+  it("parses from JSON instead of falling back to the DOM", () => {
+    expect(source).toBe("nextdata");
+  });
+
+  it("keeps every contest and skips the deleted one", () => {
+    // The 9/23 contest is flagged deleted and carries no match url.
+    expect(games).toHaveLength(6);
+    expect(games.map((g) => g.isoDate)).toEqual([
+      "2025-08-16", "2025-08-21", "2025-08-25", "2025-08-28", "2025-10-02", "2025-10-07",
+    ]);
+  });
+
+  it("has a kickoff time on every game", () => {
+    expect(games.map((g) => g.timeText)).toEqual([
+      "11:50am", "7:00pm", "7:30pm", "7:15pm", "6:30pm", "6:00pm",
+    ]);
+  });
+
+  it("reads each side's own score, so a loss is never a clean sheet", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    // The page prints "L 2-0" and "L 4-1" winner-first; the JSON states ours.
+    expect([by("2025-08-25").teamScore, by("2025-08-25").opponentScore]).toEqual([0, 2]);
+    expect([by("2025-08-28").teamScore, by("2025-08-28").opponentScore]).toEqual([1, 4]);
+    expect([by("2025-08-16").teamScore, by("2025-08-16").opponentScore]).toEqual([8, 0]);
+    for (const g of games) {
+      if (g.result === "L") expect(g.teamScore!).toBeLessThan(g.opponentScore!);
+      if (g.result === "W") expect(g.teamScore!).toBeGreaterThan(g.opponentScore!);
+    }
+  });
+
+  it("reads venue from the contest, not from '@' in row text", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    expect(by("2025-08-16").homeAway).toBe("away");
+    expect(by("2025-08-21").homeAway).toBe("home");
+    expect(by("2025-10-07").homeAway).toBe("neutral");
+    // The old DOM path found zero home games for the whole season.
+    expect(games.filter((g) => g.homeAway === "home").length).toBeGreaterThan(0);
+  });
+
+  it("reads conference/playoff/tournament from the contest type", () => {
+    const by = (d: string) => games.find((g) => g.isoDate === d)!;
+    expect(by("2025-08-28").isConference).toBe(true);
+    expect(by("2025-08-16").isTournament).toBe(true);
+    expect(by("2025-08-16").isConference).toBe(false);
+    expect(by("2025-10-07").isPlayoff).toBe(true);
+    expect(by("2025-08-25").isConference).toBe(false);
+  });
+
+  it("dates the 10/2 game to October 2, not October 26", () => {
+    // "10/2" + "6:30pm" collapsed to "10/26:00pm" in the DOM layer, giving a
+    // valid-but-wrong Oct 26 (a Sunday). The url carries the real date.
+    const wawasee = games.filter((g) => g.opponent === "Wawasee");
+    expect(wawasee.map((g) => g.isoDate)).toEqual(["2025-08-16", "2025-10-02"]);
+    expect(wawasee.map((g) => g.teamScore)).toEqual([8, 7]);
+  });
+});

@@ -46,11 +46,126 @@ export interface ScheduleParseResult {
  */
 export function parseSchedulePage(html: string, seasonSlug: string): ScheduleParseResult {
   for (const { kind, root } of extractJsonSources(html)) {
+    // MaxPreps' own shape first: positional contest tuples (see below).
+    const tuples = parseContestTuples(root);
+    if (tuples.length > 0) return { games: tuples, source: kind };
     const games = parseFromNextData(root, seasonSlug);
     if (games.length > 0) return { games, source: kind };
   }
   const games = parseFromDom(html, seasonSlug);
   return { games, source: games.length > 0 ? "dom" : "none" };
+}
+
+// ------------------------------------------------------------ contest tuples
+
+/**
+ * MaxPreps ships `pageProps.contests` as positional ARRAYS, not objects:
+ *
+ *   [[teamRowA, teamRowB], contestId, updatedAt, …, "2025-08-16T11:50:00",
+ *    …, "https://…/match/northwood-vs-wawasee/8-16-2025/?c=…", …]
+ *
+ * There is no `date` key and no `opponent` key anywhere in it, which is why
+ * the object-shaped predicate below never matched and every schedule page
+ * fell through to the DOM guesser. Each team row states its OWN score and
+ * venue, so nothing has to be inferred from row text — no winner-first
+ * ordering to undo, no asterisks to count, no "@"/"vs" to detect.
+ *
+ * Within a team row, everything is at a fixed offset from the result letter:
+ *
+ *   +0 "W"|"L"|"T"   +1 score   +6 venue   +7 type   +8 team url   +9 name
+ *
+ * venue: 0 home, 1 away, 2 neutral.  type: 0 conference, 1 non-conference,
+ * 2 tournament, 4 playoff. Anchoring on the letter rather than a hardcoded
+ * index means leading fields can shift without breaking this.
+ */
+const RESULT_LETTERS = new Set(["W", "L", "T"]);
+
+interface TupleTeam {
+  name: string;
+  result: "W" | "L" | "T";
+  score: number | null;
+  venue: number | null;
+  type: number | null;
+}
+
+function readTeamRow(row: unknown[]): TupleTeam | null {
+  const at = row.findIndex((v) => typeof v === "string" && RESULT_LETTERS.has(v));
+  if (at === -1) return null;
+  const url = row[at + 8];
+  const name = row[at + 9];
+  // Both must be present and well-formed, or this isn't the layout we think.
+  if (typeof url !== "string" || !/^https?:/.test(url)) return null;
+  if (typeof name !== "string" || name.trim() === "") return null;
+  const score = row[at + 1];
+  const venue = row[at + 6];
+  const type = row[at + 7];
+  return {
+    name: name.trim(),
+    result: row[at] as "W" | "L" | "T",
+    score: typeof score === "number" ? score : null,
+    venue: typeof venue === "number" ? venue : null,
+    type: typeof type === "number" ? type : null,
+  };
+}
+
+function readContestTuple(tuple: unknown[]): ParsedGame | null {
+  const rows = tuple[0];
+  if (!Array.isArray(rows)) return null;
+  const teams = rows
+    .filter((r): r is unknown[] => Array.isArray(r))
+    .map(readTeamRow)
+    .filter((t): t is TupleTeam => t !== null);
+  if (teams.length !== 2) return null;
+
+  const ours = teams.find((t) => isOwnTeam(t.name));
+  const them = teams.find((t) => !isOwnTeam(t.name));
+  if (!ours || !them) return null;
+
+  // A cancelled/deleted contest carries no match url — that is how we skip it.
+  const matchUrl = tuple.find((v) => typeof v === "string" && /\/match\//.test(v));
+  if (typeof matchUrl !== "string") return null;
+
+  // The url embeds the date ("…/8-16-2025/"), which also disambiguates the
+  // kickoff datetime from the row's last-updated timestamp: only the right
+  // one agrees with it.
+  const fromUrl = matchUrl.match(/\/(\d{1,2})-(\d{1,2})-(\d{4})\//);
+  if (!fromUrl) return null;
+  const isoDate = `${fromUrl[3]}-${fromUrl[1].padStart(2, "0")}-${fromUrl[2].padStart(2, "0")}`;
+  if (!isValidIsoDate(isoDate)) return null;
+
+  const kickoff = tuple.find(
+    (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) && v.slice(0, 10) === isoDate
+  );
+
+  return {
+    isoDate,
+    timeText: typeof kickoff === "string" ? timeFromDateTime(kickoff) : null,
+    opponent: them.name,
+    homeAway: ours.venue === 1 ? "away" : ours.venue === 2 ? "neutral" : "home",
+    isConference: ours.type === 0,
+    isTournament: ours.type === 2,
+    isPlayoff: ours.type === 4,
+    teamScore: ours.score,
+    opponentScore: them.score,
+    result: ours.result,
+    matchUrl: absoluteUrl(matchUrl) ?? matchUrl,
+  };
+}
+
+export function parseContestTuples(root: unknown): ParsedGame[] {
+  const games: ParsedGame[] = [];
+  const seen = new Set<string>();
+  for (const { value } of deepFindObjects(root, (o) => Array.isArray(pick(o, "contests")))) {
+    for (const entry of pick(value, "contests") as unknown[]) {
+      if (!Array.isArray(entry)) continue;
+      const game = readContestTuple(entry);
+      if (game && !seen.has(game.matchUrl)) {
+        seen.add(game.matchUrl);
+        games.push(game);
+      }
+    }
+  }
+  return games;
 }
 
 // ---------------------------------------------------------------- nextdata
