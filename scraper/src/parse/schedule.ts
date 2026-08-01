@@ -80,28 +80,40 @@ export function parseSchedulePage(html: string, seasonSlug: string): SchedulePar
  */
 const RESULT_LETTERS = new Set(["W", "L", "T"]);
 
+/** The team's own page. The row's other url is a mascot image on a different
+ *  host, so this picks out the one field whose position anchors the rest. */
+const TEAM_URL = /^https?:\/\/www\.maxpreps\.com\//i;
+
 interface TupleTeam {
   name: string;
-  result: "W" | "L" | "T";
+  result: "W" | "L" | "T" | null;
   score: number | null;
   venue: number | null;
   type: number | null;
 }
 
 function readTeamRow(row: unknown[]): TupleTeam | null {
-  const at = row.findIndex((v) => typeof v === "string" && RESULT_LETTERS.has(v));
-  if (at === -1) return null;
-  const url = row[at + 8];
-  const name = row[at + 9];
-  // Both must be present and well-formed, or this isn't the layout we think.
-  if (typeof url !== "string" || !/^https?:/.test(url)) return null;
+  // Anchored on the team url, NOT the result letter: a scheduled contest that
+  // hasn't been played carries null for both result and score, so anchoring on
+  // the letter dropped every upcoming game and sent the whole season to the
+  // DOM fallback.
+  //
+  //   … result, score, ·, ·, ·, ·, venue, type, URL, name …
+  //       -8     -7                 -2     -1    +0   +1
+  const at = row.findIndex((v) => typeof v === "string" && TEAM_URL.test(v));
+  if (at < 8) return null;
+  const name = row[at + 1];
   if (typeof name !== "string" || name.trim() === "") return null;
-  const score = row[at + 1];
-  const venue = row[at + 6];
-  const type = row[at + 7];
+
+  const result = row[at - 8];
+  const score = row[at - 7];
+  const venue = row[at - 2];
+  const type = row[at - 1];
   return {
     name: name.trim(),
-    result: row[at] as "W" | "L" | "T",
+    result: typeof result === "string" && RESULT_LETTERS.has(result)
+      ? (result as "W" | "L" | "T")
+      : null,
     score: typeof score === "number" ? score : null,
     venue: typeof venue === "number" ? venue : null,
     type: typeof type === "number" ? type : null,
@@ -133,13 +145,19 @@ function readContestTuple(tuple: unknown[]): ParsedGame | null {
   const isoDate = `${fromUrl[3]}-${fromUrl[1].padStart(2, "0")}-${fromUrl[2].padStart(2, "0")}`;
   if (!isValidIsoDate(isoDate)) return null;
 
-  const kickoff = tuple.find(
-    (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) && v.slice(0, 10) === isoDate
+  // Two ISO timestamps sit in the tuple: the row's last-updated stamp comes
+  // first, the kickoff later. Taking the LAST match means a contest updated on
+  // the day it was played can't have its update time read as its kickoff.
+  // dateFromDateTime rather than a raw slice, so a zoned value is compared in
+  // the team's timezone (see datetime.ts).
+  const kickoffs = tuple.filter(
+    (v): v is string => typeof v === "string" && dateFromDateTime(v) === isoDate
   );
+  const kickoff = kickoffs[kickoffs.length - 1];
 
   return {
     isoDate,
-    timeText: typeof kickoff === "string" ? timeFromDateTime(kickoff) : null,
+    timeText: kickoff !== undefined ? timeFromDateTime(kickoff) : null,
     opponent: them.name,
     homeAway: ours.venue === 1 ? "away" : ours.venue === 2 ? "neutral" : "home",
     isConference: ours.type === 0,
@@ -416,7 +434,7 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
       opponent,
       homeAway,
       // Legend: * Conference, ** Playoffs, *** Tournament.
-      isConference: stars === 1,
+      isConference: stars === 1 || /\bconference\b/i.test(text),
       isPlayoff: stars === 2 || /playoff|sectional|regional|semi-?state|state final/i.test(text),
       isTournament: stars === 3 || /tournament|invitational/i.test(text),
       teamScore,
@@ -460,7 +478,10 @@ function orientScore(
  * every playoff and tournament game as a conference game too.
  */
 function starCount(text: string): number {
-  return (text.match(/\*+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  // domText puts a space between adjacent nodes, so "**" can arrive as "* *".
+  // Close those up first or a playoff marker reads as a conference one.
+  const closed = text.replace(/\*[\s]+(?=\*)/g, "*");
+  return (closed.match(/\*+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
 }
 
 /**

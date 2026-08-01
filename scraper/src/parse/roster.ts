@@ -94,18 +94,24 @@ function readPositions(value: unknown): string | null {
   return unique.length > 0 ? unique.join("/") : null;
 }
 
-/** The jersey is the digit string immediately after the numeric grade. */
-function readJersey(row: unknown[]): string | null {
+/**
+ * The jersey is the digit string immediately after the numeric grade. A height
+ * or weight could in principle form the same number-then-digit-string pair, so
+ * the numeric grade must also agree with the athlete's textual one — 10 next
+ * to "So." is the real pair, 11 next to "So." is a coincidence.
+ */
+function readJersey(row: unknown[], grade: string | null): string | null {
   for (let i = 0; i < row.length - 1; i++) {
-    const grade = row[i];
+    const gradeNum = row[i];
     const jersey = row[i + 1];
     if (
-      typeof grade === "number" &&
-      Number.isInteger(grade) &&
-      grade >= 9 &&
-      grade <= 12 &&
+      typeof gradeNum === "number" &&
+      Number.isInteger(gradeNum) &&
+      gradeNum >= 9 &&
+      gradeNum <= 12 &&
       typeof jersey === "string" &&
-      /^\d{1,2}$/.test(jersey)
+      /^\d{1,2}$/.test(jersey) &&
+      (grade === null || normalizeGrade(String(gradeNum)) === grade)
     ) {
       return jersey;
     }
@@ -118,13 +124,13 @@ function readAthleteRow(row: unknown[]): ParsedRosterEntry | null {
   if (at === -1) return null;
   const fullName = row[at + 2];
   if (typeof fullName !== "string" || fullName.trim() === "") return null;
-  const grade = row[at + 5];
+  const grade = normalizeGrade(typeof row[at + 5] === "string" ? (row[at + 5] as string) : null);
 
   return {
     fullName: toGivenNameOrder(cleanNameCell(fullName)),
-    jerseyNumber: readJersey(row),
+    jerseyNumber: readJersey(row, grade),
     position: readPositions(row[at + 1]),
-    grade: normalizeGrade(typeof grade === "string" ? grade : null),
+    grade,
     athleteUrl: absoluteUrl(row[at] as string),
   };
 }

@@ -655,16 +655,18 @@ describe("schedule parser — MaxPreps' real contest-tuple shape", () => {
   });
 
   it("keeps every contest and skips the deleted one", () => {
-    // The 9/23 contest is flagged deleted and carries no match url.
-    expect(games).toHaveLength(6);
+    // The 9/23 contest is flagged deleted and carries no match url. The
+    // 10/14 one is scheduled but unplayed, and must still come through.
+    expect(games).toHaveLength(7);
     expect(games.map((g) => g.isoDate)).toEqual([
-      "2025-08-16", "2025-08-21", "2025-08-25", "2025-08-28", "2025-10-02", "2025-10-07",
+      "2025-08-16", "2025-08-21", "2025-08-25", "2025-08-28",
+      "2025-10-02", "2025-10-07", "2025-10-14",
     ]);
   });
 
   it("has a kickoff time on every game", () => {
     expect(games.map((g) => g.timeText)).toEqual([
-      "11:50am", "7:00pm", "7:30pm", "7:15pm", "6:30pm", "6:00pm",
+      "11:50am", "7:00pm", "7:30pm", "7:15pm", "6:30pm", "6:00pm", "7:15pm",
     ]);
   });
 
@@ -674,7 +676,7 @@ describe("schedule parser — MaxPreps' real contest-tuple shape", () => {
     expect([by("2025-08-25").teamScore, by("2025-08-25").opponentScore]).toEqual([0, 2]);
     expect([by("2025-08-28").teamScore, by("2025-08-28").opponentScore]).toEqual([1, 4]);
     expect([by("2025-08-16").teamScore, by("2025-08-16").opponentScore]).toEqual([8, 0]);
-    for (const g of games) {
+    for (const g of games.filter((g) => g.result !== null)) {
       if (g.result === "L") expect(g.teamScore!).toBeLessThan(g.opponentScore!);
       if (g.result === "W") expect(g.teamScore!).toBeGreaterThan(g.opponentScore!);
     }
@@ -717,8 +719,8 @@ describe("roster parser — MaxPreps' real athlete-tuple shape", () => {
 
   it("finds every athlete the page says it has", () => {
     expect(source).toBe("nextdata");
-    expect(entries).toHaveLength(7);
-    expect(expectedCount).toBe(7);
+    expect(entries).toHaveLength(8);
+    expect(expectedCount).toBe(8);
     expect(entries.length).toBe(expectedCount);
   });
 
@@ -763,5 +765,75 @@ describe("roster parser — MaxPreps' real athlete-tuple shape", () => {
 
   it("keeps every athlete's profile url for the player pages", () => {
     expect(entries.every((e) => e.athleteUrl?.includes("careerid="))).toBe(true);
+  });
+});
+
+describe("review fixes — contest and athlete tuples", () => {
+  const sched = parseSchedulePage(fixture("schedule-nextdata-contests.html"), "25-26");
+  const roster = parseRosterPage(fixture("roster-nextdata-athletes.html"));
+
+  it("parses a scheduled contest that has no result yet", () => {
+    // Anchoring team rows on the result letter dropped every upcoming game,
+    // which would have sent a whole not-yet-started season to the DOM layer.
+    const g = sched.games.find((g) => g.isoDate === "2025-10-14")!;
+    expect(g).toBeDefined();
+    expect(g.opponent).toBe("Plymouth");
+    expect(g.result).toBeNull();
+    expect(g.teamScore).toBeNull();
+    expect(g.opponentScore).toBeNull();
+    // Everything not derived from the result still comes through.
+    expect(g.timeText).toBe("7:15pm");
+    expect(g.homeAway).toBe("home");
+    expect(g.isConference).toBe(true);
+  });
+
+  it("still reads played contests alongside the unplayed one", () => {
+    expect(sched.source).toBe("nextdata");
+    expect(sched.games).toHaveLength(7);
+    expect(sched.games.filter((g) => g.result !== null)).toHaveLength(6);
+  });
+
+  it("takes the kickoff, not a same-day last-updated stamp", () => {
+    // The unplayed contest was updated on 2025-10-14 too; the kickoff is the
+    // later of the two matching timestamps.
+    expect(sched.games.find((g) => g.isoDate === "2025-10-14")!.timeText).toBe("7:15pm");
+  });
+
+  it("does not mistake a height/weight pair for the jersey", () => {
+    // Ivy Colville's row carries 11 followed by "5" before her real grade and
+    // jersey; only the pair whose number matches her grade counts.
+    const ivy = roster.entries.find((e) => e.fullName === "Ivy Colville")!;
+    expect(ivy.jerseyNumber).toBe("7");
+    expect(ivy.grade).toBe("So");
+  });
+
+  it("keeps the roster count matching the page", () => {
+    expect(roster.entries.length).toBe(roster.expectedCount);
+  });
+});
+
+describe("review fixes — row text", () => {
+  it("reads a playoff marker split across elements", () => {
+    // domText inserts a space between adjacent nodes, so "**" can arrive as
+    // "* *" and used to read as a single conference asterisk.
+    const html = `<table><tbody><tr>
+      <td><div><a href="/in/soccer/girls/match/a-vs-northwood/10-7-2025/?c=z">10/7</a><div>6:00pm</div></div></td>
+      <td><span>vs</span><a href="/in/akron/tippecanoe-valley/soccer/girls/">Tippecanoe Valley</a><span>*</span><span>*</span></td>
+      <td><span>W 12-0</span><a href="/in/soccer/girls/match/a-vs-northwood/10-7-2025/?c=z">Box Score</a></td>
+    </tr></tbody></table>`;
+    const g = parseSchedulePage(html, "25-26").games[0];
+    expect(g.isPlayoff).toBe(true);
+    expect(g.isConference).toBe(false);
+  });
+
+  it("ignores script and style content in a row", () => {
+    const html = `<table><tbody><tr>
+      <td><script>var d = "9/99";</script><style>.x{content:"7/77"}</style>
+          <div><a href="/in/soccer/girls/match/b-vs-northwood/9-3-2025/?c=y">9/3</a><div>6:45pm</div></div></td>
+      <td><span>vs</span><a href="/in/middlebury/northridge/soccer/girls/">Northridge</a></td>
+    </tr></tbody></table>`;
+    const g = parseSchedulePage(html, "25-26").games[0];
+    expect(g.isoDate).toBe("2025-09-03");
+    expect(g.timeText).toBe("6:45pm");
   });
 });

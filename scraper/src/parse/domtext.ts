@@ -20,21 +20,21 @@ import type { AnyNode } from "domhandler";
  * the time usually live inside the *same* cell. This walks all the way down
  * to text nodes, in document order.
  */
-export function domText($: cheerio.CheerioAPI, sel: cheerio.Cheerio<AnyNode>): string {
+export function domText(_$: cheerio.CheerioAPI, sel: cheerio.Cheerio<AnyNode>): string {
   const parts: string[] = [];
-  for (const node of sel.toArray()) collect($, node, parts);
+  for (const node of sel.toArray()) collect(node, parts);
   return parts.join(" ").replace(/\s+/g, " ").trim();
 }
 
-function collect($: cheerio.CheerioAPI, node: AnyNode, out: string[]): void {
-  for (const child of $(node).contents().toArray()) {
+function collect(node: AnyNode, out: string[]): void {
+  // domhandler gives <script>/<style> their own node types rather than "tag",
+  // so naming them here would never have matched — skip on the type instead.
+  for (const child of (node as { children?: AnyNode[] }).children ?? []) {
     if (child.type === "text") {
       const text = (child as { data?: string }).data?.trim();
       if (text) out.push(text);
-    } else if (child.type === "tag") {
-      const tag = (child as { name?: string }).name;
-      if (tag === "script" || tag === "style") continue;
-      collect($, child, out);
+    } else if (child.type !== "script" && child.type !== "style") {
+      collect(child, out);
     }
   }
 }
