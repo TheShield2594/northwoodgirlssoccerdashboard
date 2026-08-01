@@ -3,9 +3,14 @@ name: Publish images
 # Builds the three stack images and pushes them to this repo's GitHub
 # Packages (ghcr.io), so Portainer can pull them instead of building.
 #
-#   push to main   -> :latest (plus :main and :sha-<short>)
-#   push of vX.Y.Z -> :X.Y.Z, :X.Y, :latest is left alone
-#   manual run     -> rebuilds whatever branch you pick
+#   push to main   -> :sha-<short>, promoted to :latest and :main
+#   push of vX.Y.Z -> :sha-<short>, promoted to :X.Y.Z and :X.Y
+#   manual run     -> :sha-<short>, promoted to :<branch> (+ :latest on main)
+#
+# Builds only ever push the immutable :sha-<short> tag. The mutable tags are
+# moved afterwards by the promote job, which runs only once all three images
+# have built — so a failure in one image can't leave Portainer pulling a
+# half-updated stack off :latest.
 on:
   push:
     branches: [main]
@@ -16,6 +21,9 @@ concurrency:
   group: publish-images-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
 
@@ -23,10 +31,14 @@ jobs:
   checks:
     name: Typecheck + parser tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -72,16 +84,21 @@ jobs:
           - image: postgres
             context: ./db
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      # Image references must be lowercase; the repo slug isn't.
+      # Image references must be lowercase; the repo slug isn't. The sha tag
+      # is built by hand here so the promote job can reproduce it exactly.
       - name: Resolve image name
         id: name
-        run: echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -89,20 +106,16 @@ jobs:
 
       - name: Tags and labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ env.REGISTRY }}/${{ steps.name.outputs.repo }}/${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+            type=raw,value=${{ steps.name.outputs.sha }}
           labels: |
             org.opencontainers.image.title=northwood-${{ matrix.image }}
             org.opencontainers.image.description=NorthWood girls soccer dashboard — ${{ matrix.image }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           push: true
@@ -117,10 +130,83 @@ jobs:
           provenance: false
 
       - name: Summary
+        env:
+          IMAGE: ${{ matrix.image }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           {
-            echo "### ${{ matrix.image }}"
+            echo "### $IMAGE (built)"
             echo '```'
-            echo "${{ steps.meta.outputs.tags }}"
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Promote ${{ matrix.image }}
+    # Only runs when every image in the publish matrix succeeded, so the
+    # mutable tags always name a complete, consistent set of three.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [dashboard, scraper, postgres]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve image name
+        id: name
+        run: |
+          echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mutable tags for this ref
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.name.outputs.repo }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      # Retag in the registry — no rebuild, no re-upload of layers.
+      - name: Point the mutable tags at this build
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          SOURCE: ${{ env.REGISTRY }}/${{ steps.name.outputs.repo }}/${{ matrix.image }}:${{ steps.name.outputs.sha }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args+=(--tag "$tag")
+          done <<< "$TAGS"
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "No mutable tags for this ref; $SOURCE stands on its own."
+            exit 0
+          fi
+          docker buildx imagetools create "${args[@]}" "$SOURCE"
+
+      - name: Summary
+        env:
+          IMAGE: ${{ matrix.image }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          SOURCE: ${{ steps.name.outputs.sha }}
+        run: |
+          {
+            echo "### $IMAGE (promoted from $SOURCE)"
+            echo '```'
+            echo "$TAGS"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

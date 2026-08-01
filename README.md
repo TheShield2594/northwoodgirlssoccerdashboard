@@ -49,9 +49,13 @@ ghcr.io/theshield2594/northwoodgirlssoccerdashboard/scraper:latest
 ghcr.io/theshield2594/northwoodgirlssoccerdashboard/postgres:latest
 ```
 
-`latest` only moves for `main`; branch pushes get `:<branch>`, every build
-also gets `:sha-<short>`, and a `vX.Y.Z` tag publishes `:X.Y.Z` + `:X.Y` so
-you can pin or roll back by setting `IMAGE_TAG` on the stack.
+Publishing is automatic only for pushes to `main` and `v*` tags; any other
+branch publishes only when you dispatch the workflow for it by hand, which
+tags it `:<branch>`. Every build gets an immutable `:sha-<short>` tag, and a
+`vX.Y.Z` tag publishes `:X.Y.Z` + `:X.Y`, so you can pin or roll back by
+setting `IMAGE_TAG` on the stack. `latest` only moves for `main` — and only
+after all three images build, so a failure in one never leaves `latest`
+pointing at a mismatched stack.
 
 The `postgres` image is stock `postgres:17-alpine` with `db/schema.sql`
 baked into `/docker-entrypoint-initdb.d/` (`db/Dockerfile`), so the stack
@@ -80,8 +84,9 @@ carrying `read:packages`.
    ```
 
    The daily 6am cron keeps the current season fresh afterward.
-5. Dashboard is at `http://<host>:3300` — put it behind your reverse proxy /
-   Tailscale like your other services.
+5. Dashboard is at `http://<host>:<DASHBOARD_PORT>`, which is
+   `http://<host>:3300` unless you set `DASHBOARD_PORT` — put it behind your
+   reverse proxy / Tailscale like your other services.
 
 ### Pulling the latest build
 
