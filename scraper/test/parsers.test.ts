@@ -706,3 +706,62 @@ describe("schedule parser — MaxPreps' real contest-tuple shape", () => {
     expect(wawasee.map((g) => g.teamScore)).toEqual([8, 7]);
   });
 });
+
+describe("roster parser — MaxPreps' real athlete-tuple shape", () => {
+  // pageProps.athleteData is positional arrays with no name/jersey/position/
+  // grade key. The object predicate saw none of them; the handful of entries
+  // a run used to report came from unrelated objects in the same payload.
+  const { entries, source, expectedCount } = parseRosterPage(
+    fixture("roster-nextdata-athletes.html")
+  );
+
+  it("finds every athlete the page says it has", () => {
+    expect(source).toBe("nextdata");
+    expect(entries).toHaveLength(7);
+    expect(expectedCount).toBe(7);
+    expect(entries.length).toBe(expectedCount);
+  });
+
+  it("reads name, jersey, position and grade", () => {
+    expect(entries[0]).toEqual({
+      fullName: "Savannah Sipic",
+      jerseyNumber: "00",
+      position: "GK",
+      grade: "So",
+      athleteUrl:
+        "https://www.maxpreps.com/in/nappanee/northwood-panthers/athletes/savannah-sipic/?careerid=8ctfej1eit6h1",
+    });
+  });
+
+  it("keeps a '00' jersey rather than dropping it as falsy", () => {
+    expect(entries.find((e) => e.fullName === "Savannah Sipic")!.jerseyNumber).toBe("00");
+  });
+
+  it("collapses repeated position slots and joins distinct ones", () => {
+    const by = (n: string) => entries.find((e) => e.fullName === n)!;
+    expect(by("Noa Weldy").position).toBe("MF"); // "MF, MF, MF"
+    expect(by("Evie Graverson").position).toBe("MF/D"); // "MF, D, D"
+    expect(by("Jalayne Hurst").position).toBe("MF/FB"); // "MF, FB"
+    expect(by("Kenna Davis").position).toBe("HB"); // single slot
+  });
+
+  it("normalizes every grade the page prints", () => {
+    const grades = Object.fromEntries(entries.map((e) => [e.fullName, e.grade]));
+    expect(grades["Kenna Davis"]).toBe("Fr");
+    expect(grades["Noa Weldy"]).toBe("So");
+    expect(grades["Lily Reaker"]).toBe("Jr");
+    expect(grades["Brooke Johnson"]).toBe("Sr");
+  });
+
+  it("does not mistake the sport metadata for a player", () => {
+    // sportData carries athleteName:"Player" and name:"Soccer", which is the
+    // shape the old predicate latched onto.
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Player");
+    expect(names).not.toContain("Soccer");
+  });
+
+  it("keeps every athlete's profile url for the player pages", () => {
+    expect(entries.every((e) => e.athleteUrl?.includes("careerid="))).toBe(true);
+  });
+});

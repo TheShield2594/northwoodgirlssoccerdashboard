@@ -114,6 +114,9 @@ JSON layers, in the order they're tried:
 | `json-script` | any other JSON island on the page |
 | `dom` | **no JSON matched** — opponent, venue and score are inferred from row text |
 
+Roster pages do the same with `pageProps.athleteData` — see
+`parseAthleteTuples` in `scraper/src/parse/roster.ts`.
+
 Schedule pages ship `pageProps.contests` as positional **arrays**, not objects
 — there is no `date` key and no `opponent` key in them. Each team row states
 its own score, venue and contest type, so the JSON layer needs none of the
