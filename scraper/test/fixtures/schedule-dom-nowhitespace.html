@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>NorthWood Schedule 2019-20</title></head>
+<body>
+<!--
+  Archived-style markup: the cells are emitted with NO whitespace between
+  them, so cheerio's .text() runs them together ("9/5" + "6-2" -> "9/56-2",
+  "9/12" + "7:15pm" -> "9/127:15pm"). Row 3 carries a genuinely impossible
+  date and must be dropped rather than sent to Postgres.
+-->
+<table class="schedule"><tbody><tr><td><a href="/games/9-5-2019/soccer-fall/goshen-vs-northwood.htm?c=m1">9/5</a></td><td>6-2</td><td><a href="/in/goshen/soccer/girls/">vs Goshen</a></td></tr><tr><td><a href="/games/9-12-2019/soccer-fall/northwood-vs-concord.htm?c=m2">9/12</a></td><td>7:15pm</td><td><a href="/in/elkhart/concord/soccer/girls/">@ Concord *</a></td></tr><tr><td><a href="/games/2-30-2020/soccer-fall/northwood-vs-nowhere.htm?c=m3">2/30</a></td><td>1-0</td><td><a href="/in/nowhere/soccer/girls/">vs Nowhere</a></td></tr></tbody></table>
+</body>
+</html>

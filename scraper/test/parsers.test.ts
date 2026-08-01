@@ -73,6 +73,39 @@ describe("schedule parser — DOM fallback layer", () => {
   });
 });
 
+describe("schedule parser — cells with no whitespace between them", () => {
+  const { games } = parseSchedulePage(fixture("schedule-dom-nowhitespace.html"), "19-20");
+
+  it("does not run a date cell into the next cell (9/5 + 6-2, not 9/56)", () => {
+    const goshen = games.find((g) => g.opponent === "Goshen")!;
+    expect(goshen.isoDate).toBe("2019-09-05");
+    expect(goshen.teamScore).toBe(6);
+    expect(goshen.opponentScore).toBe(2);
+    expect(goshen.result).toBe("W");
+  });
+
+  it("does not run a date cell into a time cell (9/12 + 7:15pm, not 27:15pm)", () => {
+    const concord = games.find((g) => g.opponent === "Concord")!;
+    expect(concord.isoDate).toBe("2019-09-12");
+    expect(concord.timeText).toBe("7:15pm");
+    expect(concord.homeAway).toBe("away");
+    expect(concord.isConference).toBe(true);
+  });
+
+  it("drops a game whose date is not a real calendar day (2/30)", () => {
+    expect(games.map((g) => g.opponent)).toEqual(["Goshen", "Concord"]);
+    expect(games.every((g) => !Number.isNaN(Date.parse(`${g.isoDate}T00:00:00Z`)))).toBe(true);
+  });
+
+  it("never emits an out-of-range day or hour for any parsed game", () => {
+    for (const g of games) {
+      const [, , day] = g.isoDate.split("-").map(Number);
+      expect(day).toBeLessThanOrEqual(31);
+      if (g.timeText) expect(parseInt(g.timeText, 10)).toBeLessThanOrEqual(12);
+    }
+  });
+});
+
 describe("roster parser", () => {
   const { entries, source } = parseRosterPage(fixture("roster-nextdata.html"));
 

@@ -74,6 +74,10 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
     );
     const isoDate = normalizeDate(dateRaw, seasonSlug);
     if (!isoDate) continue;
+    if (!isValidIsoDate(isoDate)) {
+      console.warn(`[schedule] skipping ${opponent}: impossible date "${isoDate}" (from "${dateRaw}")`);
+      continue;
+    }
 
     const url = asString(
       pick(obj, "canonicalUrl", "contestUrl", "matchUrl", "url", "webUrl", "boxScoreUrl")
@@ -183,14 +187,41 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
 
     const row = $(el).closest("tr, li, [class*='row' i], [class*='contest' i], [class*='game' i]");
     const rowEl = row.length ? row : $(el).parent();
-    const text = rowEl.text().replace(/\s+/g, " ").trim();
+    // Never use rowEl.text() here: older archived pages emit adjacent cells
+    // with no whitespace between them, and .text() concatenates them into one
+    // run ("9/5" + "6-2" -> "9/56-2"), which the date regex then reads as
+    // month=9 day=56. Join the row's own nodes with a guaranteed space.
+    // .contents() rather than .children() so a cell's bare text (the time in
+    // "<td><a>8/16</a> 10:00am</td>") survives when rowEl is that cell.
+    const text = rowEl
+      .contents()
+      .map((_, el2) => $(el2).text().trim())
+      .get()
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!text) return;
 
     const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
     if (!dateMatch) return;
     seenUrls.add(matchUrl);
 
-    const timeMatch = text.match(/(\d{1,2}:\d{2}\s*(?:am|pm))/i);
+    // Same defense for the clock: an hour must not be glued to a preceding
+    // number, and must be a real 12-hour time (no "87:15pm").
+    const timeMatch = text.match(/(?<![\d:])(\d{1,2}):([0-5]\d)\s*([ap]\.?m\.?)/i);
+    const timeText =
+      timeMatch && parseInt(timeMatch[1], 10) >= 1 && parseInt(timeMatch[1], 10) <= 12
+        ? `${timeMatch[1]}:${timeMatch[2]}${timeMatch[3].toLowerCase().replace(/\./g, "")}`
+        : null;
+
+    const isoDate =
+      (dateMatch[3]
+        ? normalizeDate(`${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`, seasonSlug)
+        : null) ?? resolveGameDate(seasonSlug, `${dateMatch[1]}/${dateMatch[2]}`);
+    if (!isValidIsoDate(isoDate)) {
+      console.warn(`[schedule] skipping ${matchUrl}: impossible date "${isoDate}" (row: "${text}")`);
+      return;
+    }
 
     const homeAway: ParsedGame["homeAway"] = /(^|\s)@\s?/.test(text)
       ? "away"
@@ -232,11 +263,8 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
     games.push({
       // Prefer an explicit year when the row carries one ("8/18/2025");
       // only infer from the season slug for bare month/day dates.
-      isoDate:
-        (dateMatch[3]
-          ? normalizeDate(`${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`, seasonSlug)
-          : null) ?? resolveGameDate(seasonSlug, `${dateMatch[1]}/${dateMatch[2]}`),
-      timeText: timeMatch ? timeMatch[1] : null,
+      isoDate,
+      timeText,
       opponent,
       homeAway,
       isConference: /\*/.test(text),
@@ -257,6 +285,18 @@ function timeIsNotScore(s: string): boolean {
 }
 
 // ----------------------------------------------------------------- helpers
+
+/**
+ * True only for a real calendar date. Postgres rejects "2019-09-56" with
+ * `date/time field value out of range`, which used to abort the whole season
+ * (roster and stats included), so a malformed row is dropped here instead.
+ */
+function isValidIsoDate(iso: string): boolean {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
 
 function normalizeResult(r: string | null): "W" | "L" | "T" | null {
   if (!r) return null;

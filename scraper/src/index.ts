@@ -50,16 +50,25 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   const seasonId = await upsertSeason(seasonSlug, seasonLabel(seasonSlug), level);
 
   for (const g of games) {
-    const gameId = await upsertGame(seasonId, seasonSlug, g);
-    if (!SKIP_BOX_SCORES && !g.matchUrl.startsWith("synthetic:") && (await gameNeedsBoxScore(gameId))) {
-      const boxHtml = await fetchHtml(g.matchUrl);
-      if (boxHtml) {
-        const box = parseBoxScorePage(boxHtml, TEAM_NAME_HINT);
-        if (box.lines.length > 0) {
-          await saveBoxScore(gameId, box.lines);
-          console.log(`[scrape]   box score: ${g.opponent} (${box.lines.length} players, via ${box.source})`);
+    // One unusable game must not take the season down with it — the rest of
+    // the schedule, plus the roster and stats below, still need to be scraped.
+    try {
+      const gameId = await upsertGame(seasonId, seasonSlug, g);
+      if (!SKIP_BOX_SCORES && !g.matchUrl.startsWith("synthetic:") && (await gameNeedsBoxScore(gameId))) {
+        const boxHtml = await fetchHtml(g.matchUrl);
+        if (boxHtml) {
+          const box = parseBoxScorePage(boxHtml, TEAM_NAME_HINT);
+          if (box.lines.length > 0) {
+            await saveBoxScore(gameId, box.lines);
+            console.log(`[scrape]   box score: ${g.opponent} (${box.lines.length} players, via ${box.source})`);
+          }
         }
       }
+    } catch (err) {
+      console.error(
+        `[scrape]   skipping game ${g.isoDate} vs ${g.opponent} (${g.matchUrl}):`,
+        err instanceof Error ? err.message : err
+      );
     }
   }
 
