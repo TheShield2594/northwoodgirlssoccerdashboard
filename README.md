@@ -30,14 +30,53 @@ unreachable, so the dashboard never renders a blank page.
 
 ## Deploying to Portainer
 
-1. Push this repo somewhere Portainer can reach (or upload the compose file).
-2. **Stacks → Add stack → Repository**, point at this repo.
-3. Set the `POSTGRES_PASSWORD` environment variable in the stack config —
+Two compose files ship here:
+
+| File | Use it when |
+|---|---|
+| `portainer-stack.yml` | **Normal deploys.** Pulls prebuilt images from GitHub Packages — no build on the NAS, and "pull latest" is a two-click update. |
+| `docker-compose.yml` | Local development / building from source. |
+
+### Prebuilt images (GitHub Packages)
+
+The **Publish images** workflow (`.github/workflows/publish-images.yml`)
+typechecks, runs the parser tests, then builds and pushes three images to
+`ghcr.io` on every push to `main` (and on demand from the Actions tab):
+
+```text
+ghcr.io/theshield2594/northwoodgirlssoccerdashboard/dashboard:latest
+ghcr.io/theshield2594/northwoodgirlssoccerdashboard/scraper:latest
+ghcr.io/theshield2594/northwoodgirlssoccerdashboard/postgres:latest
+```
+
+Publishing is automatic only for pushes to `main` and `v*` tags; any other
+branch publishes only when you dispatch the workflow for it by hand, which
+tags it `:<branch>`. Every build gets an immutable `:sha-<short>` tag, and a
+`vX.Y.Z` tag publishes `:X.Y.Z` + `:X.Y`, so you can pin or roll back by
+setting `IMAGE_TAG` on the stack. `latest` only moves for `main` — and only
+after all three images build, so a failure in one never leaves `latest`
+pointing at a mismatched stack.
+
+The `postgres` image is stock `postgres:17-alpine` with `db/schema.sql`
+baked into `/docker-entrypoint-initdb.d/` (`db/Dockerfile`), so the stack
+has no bind mounts and pastes cleanly into Portainer's web editor.
+
+New packages are private by default. Either flip each one to **Public**
+(GitHub → Packages → package → Package settings → Change visibility), or add
+`ghcr.io` under Portainer → **Registries** with your GitHub handle and a PAT
+carrying `read:packages`.
+
+### Deploy
+
+1. **Stacks → Add stack → Web editor**, paste `portainer-stack.yml`
+   (or use **Repository** and set the compose path to `portainer-stack.yml`).
+2. Set the `POSTGRES_PASSWORD` environment variable in the stack config —
    it's required; the stack refuses to start without it. Any characters are
    fine: the services receive it via discrete `PG*` variables, so it never
-   needs URI-encoding.
-4. Deploy. Postgres applies `db/schema.sql` on first boot.
-5. Exec into the `scraper` container and run the one-time historical
+   needs URI-encoding. Optional: `IMAGE_TAG` (default `latest`) and
+   `DASHBOARD_PORT` (default `3300`).
+3. Deploy. Postgres applies the baked-in schema on first boot.
+4. Exec into the `scraper` container and run the one-time historical
    backfill:
 
    ```bash
@@ -45,8 +84,16 @@ unreachable, so the dashboard never renders a blank page.
    ```
 
    The daily 6am cron keeps the current season fresh afterward.
-6. Dashboard is at `http://<host>:3300` — put it behind your reverse proxy /
-   Tailscale like your other services.
+5. Dashboard is at `http://<host>:<DASHBOARD_PORT>`, which is
+   `http://<host>:3300` unless you set `DASHBOARD_PORT` — put it behind your
+   reverse proxy / Tailscale like your other services.
+
+### Pulling the latest build
+
+Once the workflow is green, in Portainer: **Stacks → northwood → Update the
+stack**, tick **Re-pull image and redeploy**, Update. That repoints all three
+services at the current `:latest`. Postgres keeps its `pgdata` volume, so
+only the code changes.
 
 ## ⚠️ Verify the scraper before trusting a backfill
 
@@ -95,8 +142,11 @@ npm run reparse
 ## Repo layout
 
 ```text
-docker-compose.yml
+docker-compose.yml          # build from source (local dev)
+portainer-stack.yml         # prebuilt ghcr.io images (deploys)
+.github/workflows/publish-images.yml   # checks -> build -> push to Packages
 db/schema.sql               # applied automatically on first Postgres boot
+db/Dockerfile               # postgres:17-alpine + the schema baked in
 scraper/
   src/config.ts             # team URLs, season slugs, politeness delay
   src/parse/nextdata.ts     # __NEXT_DATA__ extraction + deep-search helpers
