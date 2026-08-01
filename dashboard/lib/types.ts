@@ -1,4 +1,4 @@
-export type Level = "varsity" | "jv";
+export type Level = "varsity" | "jv" | "freshman";
 
 export interface SeasonInfo {
   slug: string; // '25-26'

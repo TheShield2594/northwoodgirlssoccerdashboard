@@ -9,6 +9,8 @@
     "backfill": "tsx src/index.ts --backfill",
     "reparse": "tsx src/index.ts --backfill --from-cache",
     "verify": "tsx src/verify.ts",
+    "capture": "tsx src/capture.ts",
+    "inspect": "tsx src/inspect.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseSchedulePage, normalizeDate, resolveGameDate } from "../src/parse/schedule.js";
 import { parseRosterPage } from "../src/parse/roster.js";
+import { normalizePlayerName } from "../src/parse/names.js";
+import { currentSeasonSlug, previousSeasonSlug, seasonSlugs } from "../src/config.js";
+import { pageUrlFor, parseSeasonPicker } from "../src/parse/seasons.js";
+import { normalizeTimeText, timeFromDateTime } from "../src/parse/datetime.js";
 import { parseStatsPage, parseTablesFromDom } from "../src/parse/stats.js";
 import { parseBoxScorePage } from "../src/parse/boxscore.js";
 
@@ -212,5 +216,291 @@ describe("date helpers", () => {
     expect(normalizeDate("8/18/2025", "25-26")).toBe("2025-08-18");
     expect(normalizeDate("8/18", "25-26")).toBe("2025-08-18");
     expect(normalizeDate("garbage", "25-26")).toBeNull();
+  });
+});
+
+describe("schedule parser — App Router flight payload", () => {
+  const { games, source } = parseSchedulePage(fixture("schedule-flight.html"), "25-26");
+
+  it("reads page data when there is no __NEXT_DATA__ at all", () => {
+    expect(source).toBe("flight");
+    expect(games).toHaveLength(3);
+  });
+
+  it("reassembles a contest split across two push() chunks", () => {
+    const g = games.find((g) => g.opponent === "Lakeland")!;
+    expect(g.matchUrl).toContain("lakeland-vs-northwood.htm?c=f-1");
+    expect(g.result).toBe("W");
+    expect(g.teamScore).toBe(8);
+  });
+
+  it("takes the kickoff time from the contest datetime", () => {
+    expect(games.find((g) => g.opponent === "Lakeland")!.timeText).toBe("5:30pm");
+  });
+
+  it("resolves a zoned datetime in the team's timezone, not UTC", () => {
+    // 2025-08-22T00:15Z is 8:15pm on the 21st in Indiana — the naive read
+    // would file this game a day late with no time at all.
+    const g = games.find((g) => g.matchUrl.includes("c=f-2"))!;
+    expect(g.isoDate).toBe("2025-08-21");
+    expect(g.timeText).toBe("8:15pm");
+  });
+
+  it("treats midnight as 'no time given' rather than 12:00am", () => {
+    const g = games.find((g) => g.opponent === "Penn")!;
+    expect(g.isoDate).toBe("2025-10-09");
+    expect(g.timeText).toBeNull();
+  });
+
+  it("is not confused by a bracket inside a JSON string", () => {
+    expect(games.map((g) => g.opponent)).toContain("Warsaw [not a bracket bug]");
+  });
+});
+
+describe("schedule parser — kickoff times in the DOM fallback", () => {
+  const { games } = parseSchedulePage(fixture("schedule-dom.html"), "25-26");
+
+  it("keeps the times the rows show", () => {
+    // The fixture's three rows print 10:00am, 7:15pm and 7:00pm.
+    expect(games.map((g) => g.timeText).sort()).toEqual(["10:00am", "7:00pm", "7:15pm"]);
+  });
+});
+
+describe("time normalization", () => {
+  it("accepts the display formats MaxPreps prints", () => {
+    expect(normalizeTimeText("7:15pm")).toBe("7:15pm");
+    expect(normalizeTimeText("7:15 PM")).toBe("7:15pm");
+    expect(normalizeTimeText("7:15 p.m.")).toBe("7:15pm");
+    expect(normalizeTimeText("7 pm")).toBe("7:00pm");
+    expect(normalizeTimeText("10:00AM")).toBe("10:00am");
+    expect(normalizeTimeText("19:15")).toBe("7:15pm");
+  });
+
+  it("returns null rather than inventing a time", () => {
+    expect(normalizeTimeText("TBA")).toBeNull();
+    expect(normalizeTimeText("TBD")).toBeNull();
+    expect(normalizeTimeText("")).toBeNull();
+    expect(normalizeTimeText(null)).toBeNull();
+    // "5 A" is five assists, and "Sep 5 at Penn" is a fixture line — neither
+    // is 5:00am.
+    expect(normalizeTimeText("5 A")).toBeNull();
+    expect(normalizeTimeText("Sep 5 at Penn")).toBeNull();
+    expect(normalizeTimeText("W 8-0")).toBeNull();
+  });
+
+  it("pulls the clock out of a datetime", () => {
+    expect(timeFromDateTime("2025-08-16T17:30:00")).toBe("5:30pm");
+    expect(timeFromDateTime("2025-08-16T00:00:00")).toBeNull();
+    expect(timeFromDateTime("2025-08-16")).toBeNull();
+    expect(timeFromDateTime("not a date")).toBeNull();
+  });
+});
+
+describe("roster parser — App Router flight payload", () => {
+  const { entries, source } = parseRosterPage(fixture("roster-flight.html"));
+
+  it("imports the roster when there is no __NEXT_DATA__", () => {
+    expect(source).toBe("flight");
+    expect(entries).toHaveLength(2);
+  });
+
+  it("keeps an athlete that carries an SEO title", () => {
+    const avery = entries.find((e) => e.fullName === "Avery Miller")!;
+    expect(avery).toBeDefined();
+    expect(avery.jerseyNumber).toBe("9");
+    expect(avery.grade).toBe("Sr");
+  });
+
+  it("still drops the coach", () => {
+    expect(entries.map((e) => e.fullName)).not.toContain("Dana Whitfield");
+  });
+});
+
+describe("roster parser — plain table, surname-first names", () => {
+  const { entries, source } = parseRosterPage(fixture("roster-dom-table.html"));
+
+  it("reads a roster whose names are not links", () => {
+    expect(source).toBe("dom");
+    expect(entries).toHaveLength(3);
+  });
+
+  it("flips 'Miller, Avery' into 'Avery Miller'", () => {
+    const avery = entries.find((e) => e.fullName === "Avery Miller")!;
+    expect(avery.jerseyNumber).toBe("9");
+    expect(avery.position).toBe("Forward");
+    expect(avery.grade).toBe("Sr");
+  });
+
+  it("handles a particled surname", () => {
+    expect(entries.map((e) => e.fullName)).toContain("Ruby van Dyke");
+  });
+
+  it("skips the coaching-staff row and the 'View Schedule' link", () => {
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Dana Whitfield");
+    expect(names).not.toContain("View Schedule");
+  });
+});
+
+describe("player-name canonicalization", () => {
+  it("joins the same athlete across pages that spell her differently", () => {
+    expect(normalizePlayerName("Miller, Avery")).toBe("Avery Miller");
+    expect(normalizePlayerName("#9 Avery Miller")).toBe("Avery Miller");
+    expect(normalizePlayerName("Avery Miller Sr.")).toBe("Avery Miller");
+  });
+
+  it("rejects link text that merely looks like a name", () => {
+    expect(normalizePlayerName("View Profile")).toBeNull();
+    expect(normalizePlayerName("Full Roster")).toBeNull();
+    expect(normalizePlayerName("Avery")).toBeNull();
+    expect(normalizePlayerName("")).toBeNull();
+  });
+});
+
+describe("season rollover", () => {
+  const jun30 = new Date("2026-06-30T12:00:00");
+  const jul01 = new Date("2026-07-01T12:00:00");
+
+  it("rolls the current season over on July 1", () => {
+    expect(currentSeasonSlug(jun30)).toBe("25-26");
+    expect(currentSeasonSlug(jul01)).toBe("26-27");
+  });
+
+  it("keeps the previous season available across the rollover", () => {
+    expect(previousSeasonSlug(jul01)).toBe("25-26");
+  });
+
+  it("lists every season, newest first, back to 10-11", () => {
+    const slugs = seasonSlugs(jul01);
+    expect(slugs[0]).toBe("26-27");
+    expect(slugs[slugs.length - 1]).toBe("10-11");
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it("recomputes rather than freezing a value at import time", () => {
+    // The scraper is one long-lived process with a daily cron. If these were
+    // constants, a container started in June would still call 25-26 the
+    // current season in August — fetching the new season's page from the
+    // bare URL and filing its games under the old season.
+    expect(currentSeasonSlug(jun30)).not.toBe(currentSeasonSlug(jul01));
+  });
+});
+
+describe("roster parser — a genuinely empty roster (real 26-27 page)", () => {
+  const { entries, expectedCount } = parseRosterPage(fixture("roster-empty-real.html"));
+
+  it("reports the page's own athlete count", () => {
+    // 0 parsed AND 0 expected is "no roster entered yet", not a broken
+    // parser. Without the count the two are indistinguishable in the log.
+    expect(expectedCount).toBe(0);
+    expect(entries).toHaveLength(0);
+  });
+
+  it("does not mistake the tab labels for players", () => {
+    // "Players (0)" and "Staff (4)" are two capitalized-word anchors, the
+    // same shape as a name — they must not become roster entries.
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Players");
+    expect(names).not.toContain("Staff");
+    expect(names.join(" ")).not.toMatch(/staff|players/i);
+  });
+});
+
+describe("season discovery from the site's own picker", () => {
+  const seasons = parseSeasonPicker(fixture("roster-empty-real.html"));
+
+  it("finds every level, including a freshman squad we never hardcoded", () => {
+    const levels = [...new Set(seasons.map((s) => s.level))].sort();
+    expect(levels).toEqual(["freshman", "jv", "varsity"]);
+  });
+
+  it("keeps one entry per level+season", () => {
+    const keys = seasons.map((s) => `${s.level}:${s.seasonSlug}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("builds page URLs for the current season off the bare team URL", () => {
+    const v2627 = seasons.find((s) => s.level === "varsity" && s.seasonSlug === "26-27")!;
+    expect(pageUrlFor(v2627, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/roster/"
+    );
+  });
+
+  it("builds page URLs for a historical season off its slugged URL", () => {
+    const v2526 = seasons.find((s) => s.level === "varsity" && s.seasonSlug === "25-26")!;
+    // The picker points at .../25-26/schedule/; roster must not become
+    // .../25-26/schedule/roster/.
+    expect(pageUrlFor(v2526, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/25-26/roster/"
+    );
+    expect(pageUrlFor(v2526, "stats")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/25-26/stats/"
+    );
+  });
+
+  it("handles the JV level's extra path segment", () => {
+    const jv = seasons.find((s) => s.level === "jv" && s.seasonSlug === "25-26")!;
+    expect(pageUrlFor(jv, "roster")).toBe(
+      "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/jv/25-26/roster/"
+    );
+  });
+});
+
+describe("review fixes", () => {
+  it("keeps a header row built from <td> out of the roster", () => {
+    // No <thead>, and the header cells are <td> — the row loop used to read
+    // "Player Name" as a person because both tokens are capitalized.
+    const html = `<table>
+      <tr><td>#</td><td>Player Name</td><td>Pos</td><td>Yr</td></tr>
+      <tr><td>9</td><td>Miller, Avery</td><td>Forward</td><td>Senior</td></tr>
+    </table>`;
+    const names = parseRosterPage(html).entries.map((e) => e.fullName);
+    expect(names).toEqual(["Avery Miller"]);
+  });
+
+  it("keeps a name with diacritics", () => {
+    expect(normalizePlayerName("Núñez, Sofía")).toBe("Sofía Núñez");
+    expect(normalizePlayerName("Chloé Beaumont")).toBe("Chloé Beaumont");
+  });
+
+  it("treats a Statistician as staff in the table fallback too", () => {
+    const html = `<table>
+      <thead><tr><th>#</th><th>Name</th><th>Pos</th></tr></thead>
+      <tbody>
+        <tr><td>9</td><td>Miller, Avery</td><td>Forward</td></tr>
+        <tr><td></td><td>Reed, Dana</td><td>Statistician</td></tr>
+      </tbody>
+    </table>`;
+    const names = parseRosterPage(html).entries.map((e) => e.fullName);
+    expect(names).toEqual(["Avery Miller"]);
+  });
+
+  it("only strips a whole trailing page segment from a picker URL", () => {
+    const base = "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls";
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      p: [
+        { year: "25-26", teamLevel: "Varsity", canonicalUrl: `${base}/25-26/team-stats/` },
+        { year: "24-25", teamLevel: "Varsity", canonicalUrl: `${base}/24-25/schedule.aspx` },
+      ],
+    })}</script>`;
+    const found = parseSeasonPicker(html);
+    // "team-stats" is not the "stats" page segment and must survive intact.
+    expect(pageUrlFor(found.find((s) => s.seasonSlug === "25-26")!, "roster")).toBe(
+      `${base}/25-26/team-stats/roster/`
+    );
+    expect(pageUrlFor(found.find((s) => s.seasonSlug === "24-25")!, "roster")).toBe(
+      `${base}/24-25/roster/`
+    );
+  });
+
+  it("rejects our own mascot as an opponent", () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      contests: [
+        { date: "2025-08-16T17:30:00", opponent: { name: "Panthers" }, canonicalUrl: "/games/a.htm" },
+        { date: "2025-08-18T17:30:00", opponent: { name: "Lakeland" }, canonicalUrl: "/games/b.htm" },
+      ],
+    })}</script>`;
+    const { games } = parseSchedulePage(html, "25-26");
+    expect(games.map((g) => g.opponent)).toEqual(["Lakeland"]);
   });
 });

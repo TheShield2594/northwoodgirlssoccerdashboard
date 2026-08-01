@@ -98,12 +98,29 @@ only the code changes.
 ## ⚠️ Verify the scraper before trusting a backfill
 
 This project was built in a sandbox that **cannot reach maxpreps.com**, so
-the parsers could not be run against the live site. They are built to be
-resilient — every parser reads MaxPreps' embedded `__NEXT_DATA__` JSON first
-(survives CSS/markup redesigns) and only falls back to DOM scraping — and
-they're covered by fixture tests (`cd scraper && npm test`). But before the
-first real run, spend two minutes verifying from a machine that can reach
-the site:
+the parsers have never been run against the live site, and the fixtures in
+`scraper/test/fixtures/` are hand-written approximations of MaxPreps markup,
+not captures of it. They're covered by tests (`cd scraper && npm test`), but
+a passing test only proves the parser matches the guess.
+
+Every parser reads embedded JSON first and falls back to DOM scraping. The
+JSON layers, in the order they're tried:
+
+| Layer | What it is |
+| --- | --- |
+| `nextdata` | `<script id="__NEXT_DATA__">` — the Next.js **Pages Router** payload |
+| `flight` | `self.__next_f.push([1,"…"])` chunks — the **App Router** payload |
+| `ldjson` | `<script type="application/ld+json">` structured data |
+| `json-script` | any other JSON island on the page |
+| `dom` | **no JSON matched** — opponent, venue and score are inferred from row text |
+
+That last row is the one to watch. The DOM layer doesn't fail when markup
+drifts, it guesses, and wrong-but-plausible rows land in the database. The
+scraper now prints a `WARNING: … came from the DOM fallback` line every time
+it happens, plus warnings for a roster that parsed to zero players and a
+schedule with no kickoff times. **A clean run should show no warnings.**
+
+Before the first real run, verify from a machine that can reach the site:
 
 ```bash
 cd scraper
@@ -114,10 +131,11 @@ npm run verify -- varsity 24-25 # any historical season
 ```
 
 `verify` fetches one season's schedule/roster/stats/box-score pages, prints
-exactly what each parser layer found (and via which layer: `nextdata` or
-`dom`), and — if a parser comes up empty — dumps the page's `__NEXT_DATA__`
-key structure so re-aiming the shape predicates in `scraper/src/parse/*.ts`
-is quick. It never writes to the database.
+which JSON layers each page even has, what each parser found and via which
+layer, how many games came back with a kickoff time, and — if a parser comes
+up empty — the page's `__NEXT_DATA__` key structure, so re-aiming the shape
+predicates in `scraper/src/parse/*.ts` is quick. It never writes to the
+database.
 
 Things `verify` may surface:
 
@@ -128,6 +146,44 @@ Things `verify` may surface:
   `pageProps` key list shows where the contest array actually lives.
 - **No box score lines** — many games simply have none entered on MaxPreps;
   try another game's URL before assuming the parser is wrong.
+- **0 roster entries** — check whether the log says `page reports 0 athletes`.
+  MaxPreps ships its own `athleteCount`, so an empty roster is reported as
+  either "nothing to import" (the coach hasn't entered one — normal for a
+  season that just started) or an `ERROR` naming the mismatch. Only the
+  second is a parser bug.
+- **`embedded JSON layers: NONE`** — MaxPreps changed how it ships page data.
+  Capture the page (below) and re-aim the parser against it; do not trust
+  anything the DOM fallback imported in the meantime.
+
+### Inspecting a page already on disk
+
+Every fetched page is cached in the `scrapecache` volume at `/cache`, so a
+page that imported badly can be re-parsed exactly as the scraper saw it —
+no network, no database:
+
+```bash
+docker exec <scraper> ls /cache
+docker exec <scraper> npm run inspect -- /cache/<file>.html
+```
+
+It prints which JSON layers the page has and every row the parser got out,
+which separates "the parser is wrong" from "the page never arrived".
+
+### Capturing real pages
+
+To fix a parser properly you need the HTML MaxPreps actually served:
+
+```bash
+cd scraper
+npm run capture                      # current season, varsity
+npm run capture -- jv                # current season, JV
+npm run capture -- varsity 24-25     # any historical season
+```
+
+Files land in `scraper/captured/` (not gitignored — commit them if you want
+them reviewed) and each one prints which JSON layers it contains. Captures
+include student athletes' names; they're public pages, but treat a capture
+like the roster it is.
 
 ### Re-parsing without re-scraping
 
@@ -139,6 +195,34 @@ without touching maxpreps.com:
 npm run reparse
 ```
 
+### Repairing a season that imported badly
+
+Upserts can add and correct rows but never remove one, so a game stored
+under a URL the schedule no longer lists — or a player invented by a bad
+parse — survives every re-run. `--prune` reconciles instead: after a season
+scrapes cleanly it deletes that season's rows the run didn't see.
+
+```bash
+npm run backfill -- --prune     # every season
+npm start -- --prune            # current season only
+```
+
+It's season-scoped and refuses to prune a roster it parsed as empty, so a
+failed fetch can't wipe history. Check the run's warnings first — pruning
+against a bad parse just replaces stale wrong rows with fresh wrong ones.
+
+## Is what I'm looking at real?
+
+The dashboard serves a **fictional demo dataset** whenever the `games` table
+is empty, so the UI is explorable before the first scrape. Pages show a pink
+"Sample data" banner when that happens — if you see it, none of the players,
+opponents or scores on screen came from MaxPreps.
+
+The check is `SELECT 1 FROM games LIMIT 1`, so it is all-or-nothing on games.
+A database with games but no rosters is *real* data and gets no banner; the
+Players page explains that the roster is empty rather than rendering a blank
+table.
+
 ## Repo layout
 
 ```text
@@ -149,12 +233,16 @@ db/schema.sql               # applied automatically on first Postgres boot
 db/Dockerfile               # postgres:17-alpine + the schema baked in
 scraper/
   src/config.ts             # team URLs, season slugs, politeness delay
-  src/parse/nextdata.ts     # __NEXT_DATA__ extraction + deep-search helpers
+  src/parse/nextdata.ts     # embedded-JSON extraction (all layers) + deep search
+  src/parse/datetime.ts     # kickoff times + timezone-correct dates
+  src/parse/names.ts        # player-name canonicalization (the join key)
   src/parse/schedule.ts     # games/results   (JSON-first, DOM fallback)
   src/parse/roster.ts       # players         (JSON-first, DOM fallback)
   src/parse/stats.ts        # season stat lines + STAT_COLUMN_MAP
   src/parse/boxscore.ts     # per-game player lines (best effort)
   src/verify.ts             # live diagnostic (npm run verify)
+  src/capture.ts            # save raw page HTML (npm run capture)
+  src/inspect.ts            # parse a local HTML file (npm run inspect)
   test/                     # fixture tests for both parser layers
 dashboard/
   app/                      # Overview, Schedule, Players, Players/[id], History
@@ -162,6 +250,40 @@ dashboard/
   lib/demo.ts               # bannered sample dataset (fictional players)
   lib/data.ts               # Postgres reads with automatic demo fallback
 ```
+
+## Which seasons get scraped
+
+The scraper reads MaxPreps' own season picker off the team home page. That
+payload states every level and year that exists, plus the canonical URL for
+each, so nothing is guessed:
+
+```text
+[run] discovered 71 published season/level combos from the site's season picker
+      (levels: freshman, jv, varsity); scraping 6
+```
+
+This is what makes a freshman squad appear on its own (NorthWood added one in
+26-27) and what removes the bare-vs-slugged URL problem below. If the picker
+can't be read, the run falls back to generated slugs and says so.
+
+## Season rollover
+
+MaxPreps serves the current season from the bare URL (`…/soccer/girls/schedule/`)
+and every other season from a slugged one (`…/soccer/girls/24-25/schedule/`),
+so which season counts as "current" decides which URL gets fetched. The
+cutover is July 1.
+
+`currentSeasonSlug()` / `seasonSlugs()` in `scraper/src/config.ts` are
+**functions, evaluated per run, not constants**. That is deliberate: the
+scraper is a single long-lived process with a daily cron, so a value frozen
+at import time would outlive the rollover. A container started in June would
+still call the old year "current" in August — fetching the new season's page
+from the bare URL, filing its games under the old season's row, and never
+scraping the new season at all.
+
+Daily runs scrape the current season **and the previous one**, since box
+scores and final stat lines get entered days after the last whistle, and
+because the new season's page may not exist yet in early July.
 
 ## Notes
 

@@ -1,19 +1,38 @@
-export type TeamLevel = "varsity" | "jv";
+export type TeamLevel = "varsity" | "jv" | "freshman";
 
-// The team's root page for each level. Varsity is the bare URL; JV lives
-// under a /jv/ segment. If NorthWood ever fields a freshman squad, add
-// "freshman" here and to TEAM_LEVELS — everything downstream treats level
-// as data, not a hardcoded pair.
+// The team's root page for each level. Varsity is the bare URL; the others
+// live under a level segment. These are only the FALLBACK: the real list of
+// levels and seasons is discovered from the site's own season picker (see
+// parse/seasons.ts), which knows exactly which combinations exist.
 const LEVEL_BASE: Record<TeamLevel, string> = {
   varsity: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls",
   jv: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/jv",
+  freshman: "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/freshman",
 };
 
-export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv"];
+// NorthWood fields a freshman squad as of 26-27. Levels that don't exist for
+// a given season just 404 and are skipped, so listing all three is free.
+export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv", "freshman"];
+
+/** For validating a level discovered from the site against what we support. */
+export const TEAM_LEVEL_SET: ReadonlySet<string> = new Set<string>(TEAM_LEVELS);
+
+/** The varsity team's current-season home page — the one that carries the
+ *  season picker every level and year is discovered from. */
+export const teamHomeUrl = () => `${LEVEL_BASE.varsity}/`;
 
 // The school-name hint used to tell NorthWood's tables/rows apart from the
 // opponent's on match pages.
 export const TEAM_NAME_HINT = "NorthWood";
+
+// The mascot shows up in row text as often as the school name does, and an
+// "opponent" matching either means the extraction grabbed the wrong side.
+export const TEAM_MASCOT_HINT = "Panthers";
+
+// Nappanee is in Indiana's Eastern-time zone. Kickoff datetimes that carry a
+// UTC offset get resolved against this, so an evening game keeps its own
+// calendar date instead of rolling forward with UTC.
+export const TEAM_TIMEZONE = "America/Indiana/Indianapolis";
 
 // Season slugs, current -> oldest, matching MaxPreps' URL scheme. The
 // CURRENT season lives at the bare URL with no slug segment; historical
@@ -21,26 +40,48 @@ export const TEAM_NAME_HINT = "NorthWood";
 // sport, so the season starting in the fall of year Y is "Y-(Y+1)".
 // A new slug becomes current on July 1 (MaxPreps rolls its "current
 // season" over in the summer).
-function currentSeasonStartYear(now = new Date()): number {
+//
+// These are FUNCTIONS, not constants, and that is load-bearing. The scraper
+// runs as one long-lived process with a daily cron, so a value computed at
+// import time is frozen for the container's whole life. A container started
+// before July 1 would still call the old year "current" months later —
+// and because the current season is the one served from the BARE url, that
+// means fetching the new season's page and filing its games under the old
+// season's row, while the new season never gets scraped at all.
+//
+export function currentSeasonStartYear(now = new Date()): number {
   const y = now.getFullYear() % 100;
   return now.getMonth() >= 6 ? y : y - 1; // July (month 6) or later = new season
 }
 
-function buildSeasonSlugs(): string[] {
+function slugForStartYear(start: number): string {
+  const end = (start + 1) % 100;
+  return `${String(start).padStart(2, "0")}-${String(end).padStart(2, "0")}`;
+}
+
+/** Every season slug, current -> oldest. e.g. ["26-27","25-26",...,"10-11"] */
+export function seasonSlugs(now = new Date()): string[] {
   const slugs: string[] = [];
-  for (let start = currentSeasonStartYear(); start >= 10; start--) {
-    const end = (start + 1) % 100;
-    slugs.push(`${String(start).padStart(2, "0")}-${String(end).padStart(2, "0")}`);
+  for (let start = currentSeasonStartYear(now); start >= 10; start--) {
+    slugs.push(slugForStartYear(start));
   }
   return slugs;
 }
 
-export const SEASON_SLUGS = buildSeasonSlugs(); // e.g. ["26-27","25-26",...,"10-11"]
-export const CURRENT_SEASON_SLUG = SEASON_SLUGS[0];
+export function currentSeasonSlug(now = new Date()): string {
+  return slugForStartYear(currentSeasonStartYear(now));
+}
+
+/** The season just ended. Still worth scraping daily for a while: box scores
+ *  and final stat lines get entered days after the last whistle, and it
+ *  covers the window where the new season's page doesn't exist yet. */
+export function previousSeasonSlug(now = new Date()): string {
+  return slugForStartYear(currentSeasonStartYear(now) - 1);
+}
 
 function pageUrl(level: TeamLevel, seasonSlug: string, page: string): string {
   const base = LEVEL_BASE[level];
-  return seasonSlug === CURRENT_SEASON_SLUG
+  return seasonSlug === currentSeasonSlug()
     ? `${base}/${page}/`
     : `${base}/${seasonSlug}/${page}/`;
 }

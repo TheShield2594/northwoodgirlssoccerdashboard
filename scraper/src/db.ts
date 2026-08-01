@@ -122,7 +122,11 @@ export async function upsertRosterEntry(
  *  a mid-loop failure can't leave a half-written stats page). Creates
  *  roster rows for any player who shows up on the stats page but wasn't on
  *  the roster page. */
-export async function saveSeasonStats(seasonId: number, lines: ParsedStatLine[]): Promise<void> {
+export async function saveSeasonStats(
+  seasonId: number,
+  lines: ParsedStatLine[]
+): Promise<number[]> {
+  const touched: number[] = [];
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -138,6 +142,7 @@ export async function saveSeasonStats(seasonId: number, lines: ParsedStatLine[])
         },
         client
       );
+      touched.push(playerSeasonId);
       for (const [statName, statValue] of Object.entries(line.stats)) {
         await client.query(
           `INSERT INTO player_season_stats (player_season_id, stat_name, stat_value)
@@ -149,6 +154,70 @@ export async function saveSeasonStats(seasonId: number, lines: ParsedStatLine[])
       }
     }
     await client.query("COMMIT");
+    return touched;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Drop rows for a season that this run did NOT see.
+ *
+ * Upserts alone can only add and correct; a game stored under a URL the
+ * schedule no longer lists (or a player parsed out of garbled markup) stays
+ * forever. `--prune` is what turns a re-scrape into a true reconciliation,
+ * so a season that imported badly can be repaired by running it again.
+ *
+ * Deliberately season-scoped: a season whose page 404s is skipped entirely
+ * upstream, so an outage can never empty out history.
+ */
+export async function pruneSeason(
+  seasonId: number,
+  keptGameUrls: string[] | null,
+  keptPlayerSeasonIds: number[] | null
+): Promise<{ games: number; rosterEntries: number; players: number }> {
+  // A null kept-set means the caller could not vouch for that category this
+  // run (a fetch failed, a parse threw, the page came back empty). Absence of
+  // evidence is not evidence of absence: skip rather than delete. Deleting on
+  // an empty set would turn one bad fetch into a wiped season.
+  // All three deletes in one transaction: the orphan-player sweep depends on
+  // the roster delete having happened, so a failure between them would leave
+  // players stranded with no roster row and no way to notice.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const games =
+      keptGameUrls !== null && keptGameUrls.length > 0
+        ? await client.query(
+            `DELETE FROM games WHERE season_id = $1 AND NOT (maxpreps_url = ANY($2::text[]))`,
+            [seasonId, keptGameUrls]
+          )
+        : { rowCount: 0 };
+    const rosterEntries =
+      keptPlayerSeasonIds !== null && keptPlayerSeasonIds.length > 0
+        ? await client.query(
+            `DELETE FROM player_seasons WHERE season_id = $1 AND NOT (id = ANY($2::int[]))`,
+            [seasonId, keptPlayerSeasonIds]
+          )
+        : { rowCount: 0 };
+    // A player who is now on no roster and has no box-score line was a parsing
+    // artifact ("View Profile", a mangled name). Nothing references her.
+    const players = await client.query(
+      `DELETE FROM players p
+        WHERE NOT EXISTS (SELECT 1 FROM player_seasons ps WHERE ps.player_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM game_player_stats gs WHERE gs.player_id = p.id)`
+    );
+
+    await client.query("COMMIT");
+    return {
+      games: games.rowCount ?? 0,
+      rosterEntries: rosterEntries.rowCount ?? 0,
+      players: players.rowCount ?? 0,
+    };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;

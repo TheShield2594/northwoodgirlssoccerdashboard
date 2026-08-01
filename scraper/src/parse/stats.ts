@@ -1,5 +1,13 @@
 import * as cheerio from "cheerio";
-import { asNumber, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
+import { cleanNameCell, toGivenNameOrder } from "./names.js";
+import {
+  ParseSource,
+  asNumber,
+  asString,
+  deepFindObjects,
+  extractJsonSources,
+  pick,
+} from "./nextdata.js";
 
 export interface ParsedStatLine {
   playerName: string;
@@ -9,7 +17,7 @@ export interface ParsedStatLine {
 
 export interface StatsParseResult {
   lines: ParsedStatLine[];
-  source: "nextdata" | "dom" | "none";
+  source: ParseSource;
   /** Column headers seen but not mapped — surfaced by verify so the map can grow. */
   unmappedHeaders: string[];
 }
@@ -81,10 +89,9 @@ export const JSON_FIELD_MAP: Record<string, string> = {
 
 /** Parse a team season-stats page (aggregate per-player stat lines). */
 export function parseStatsPage(html: string): StatsParseResult {
-  const next = extractNextData(html);
-  if (next) {
-    const lines = parseFromNextData(next);
-    if (lines.length > 0) return { lines, source: "nextdata", unmappedHeaders: [] };
+  for (const { kind, root } of extractJsonSources(html)) {
+    const lines = parseFromNextData(root);
+    if (lines.length > 0) return { lines, source: kind, unmappedHeaders: [] };
   }
   return parseTablesFromDom(html);
 }
@@ -111,6 +118,8 @@ function parseFromNextData(root: unknown): ParsedStatLine[] {
       const last = asString(pick(obj, "lastName"));
       if (first && last) playerName = `${first} ${last}`;
     }
+    if (!playerName) continue;
+    playerName = toGivenNameOrder(cleanNameCell(playerName));
     if (!playerName) continue;
 
     const line: ParsedStatLine = byName.get(playerName) ?? {
@@ -191,11 +200,9 @@ export function parseTablesFromDom(html: string, teamNameHint?: string): StatsPa
       if (/total|opponent|team\b/i.test(nameCell)) return;
 
       const numMatch = nameCell.match(/#\s?(\d{1,2})/) || nameCell.match(/^(\d{1,2})\s+(?=[A-Z])/);
-      const playerName = nameCell
-        .replace(/#\s?\d{1,2}/, "")
-        .replace(/^\d{1,2}\s+/, "")
-        .replace(/\b(Fr|So|Jr|Sr)\.?$/, "")
-        .trim();
+      // Canonical "First Last" so a stats page that prints "Miller, Avery"
+      // joins to the roster's "Avery Miller" instead of forking the player.
+      const playerName = toGivenNameOrder(cleanNameCell(nameCell));
       if (!playerName || !/[A-Za-z]/.test(playerName)) return;
 
       const line: ParsedStatLine = byName.get(playerName) ?? {

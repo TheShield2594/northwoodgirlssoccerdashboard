@@ -93,6 +93,26 @@ export default async function PlayersPage({
         <Controls seasons={seasons} level={level} season={season} />
       </div>
 
+      {bundle.roster.length === 0 ? (
+        // A season can have games but no players: MaxPreps rosters are entered
+        // by the coach and are often empty early in a season (or absent for
+        // older seasons). Say which it is, rather than rendering a blank table
+        // that reads like the dashboard is broken.
+        <section className="card ruled">
+          <div className="card-head"><h2>No roster</h2></div>
+          <div className="card-body">
+            <p className="sub">
+              No players were imported for {bundle.season.label} {levelLabel(level)}
+              {bundle.games.length > 0 ? " — though its schedule was." : "."}{" "}
+              Rosters are entered by the coaching staff, so a season that has just
+              started often has none on MaxPreps yet. If you expect players here,
+              the scraper log for this season says which it is: it reports the
+              athlete count MaxPreps itself gives, and flags a mismatch as an
+              error.
+            </p>
+          </div>
+        </section>
+      ) : (
       <div className="stack">
         <section className="card ruled">
           <div className="card-head">
@@ -109,6 +129,7 @@ export default async function PlayersPage({
           </section>
         )}
       </div>
+      )}
     </>
   );
 }

@@ -80,7 +80,14 @@ export function resolveSelection(
   seasons: SeasonInfo[],
   searchParams: { level?: string; season?: string }
 ): { level: Level; season: string } {
-  const level: Level = searchParams.level === "jv" ? "jv" : "varsity";
+  // Accept any level the database actually holds — the school can add a
+  // squad (freshman arrived in 26-27) and the scraper discovers it, so the
+  // UI must not be limited to a hardcoded pair.
+  const requestedLevel = searchParams.level as Level | undefined;
+  const level: Level =
+    requestedLevel && seasons.some((s) => s.level === requestedLevel)
+      ? requestedLevel
+      : seasons[0]?.level ?? "varsity";
   const forLevel = seasons.filter((s) => s.level === level);
   const requested = searchParams.season;
   const season =

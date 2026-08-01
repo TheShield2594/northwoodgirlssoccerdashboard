@@ -55,7 +55,7 @@ export function winPct(s: SeasonInfo): number {
 }
 
 export function levelLabel(level: Level): string {
-  return level === "jv" ? "JV" : "Varsity";
+  return level === "jv" ? "JV" : level === "freshman" ? "Freshman" : "Varsity";
 }
 
 /** Build an href that keeps the level/season selection in the URL. */
