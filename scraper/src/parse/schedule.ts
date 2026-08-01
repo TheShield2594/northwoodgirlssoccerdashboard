@@ -1,5 +1,15 @@
 import * as cheerio from "cheerio";
-import { absoluteUrl, asNumber, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
+import { TEAM_NAME_HINT } from "../config.js";
+import {
+  ParseSource,
+  absoluteUrl,
+  asNumber,
+  asString,
+  deepFindObjects,
+  extractJsonSources,
+  pick,
+} from "./nextdata.js";
+import { dateFromDateTime, normalizeTimeText, timeFromDateTime } from "./datetime.js";
 
 export interface ParsedGame {
   isoDate: string; // 'YYYY-MM-DD'
@@ -17,24 +27,26 @@ export interface ParsedGame {
 
 export interface ScheduleParseResult {
   games: ParsedGame[];
-  source: "nextdata" | "dom" | "none";
+  source: ParseSource;
 }
 
 /**
  * Parse a MaxPreps schedule page. Strategy:
- *   1. __NEXT_DATA__ JSON — find contest-shaped objects (a date field +
- *      an opponent field). Survives any CSS/markup redesign.
- *   2. DOM fallback — game rows keyed off links to match pages.
+ *   1. Embedded JSON — __NEXT_DATA__, the App Router flight payload, JSON-LD,
+ *      any other JSON island — searched for contest-shaped objects (a date
+ *      field + an opponent field). Survives any CSS/markup redesign.
+ *   2. DOM fallback — game rows keyed off links to match pages. This layer
+ *      is a guess: it infers opponent, venue and score from row text, so it
+ *      is the one that produces subtly-wrong rows when the markup drifts.
  *
- * If BOTH layers return nothing on a page that visibly has games, run
+ * If EVERY layer returns nothing on a page that visibly has games, run
  * `npm run verify` — it prints which layer matched what, and dumps the
- * top-level __NEXT_DATA__ keys so the predicate below is easy to re-aim.
+ * embedded-JSON shapes so the predicate below is easy to re-aim.
  */
 export function parseSchedulePage(html: string, seasonSlug: string): ScheduleParseResult {
-  const next = extractNextData(html);
-  if (next) {
-    const games = parseFromNextData(next, seasonSlug);
-    if (games.length > 0) return { games, source: "nextdata" };
+  for (const { kind, root } of extractJsonSources(html)) {
+    const games = parseFromNextData(root, seasonSlug);
+    if (games.length > 0) return { games, source: kind };
   }
   const games = parseFromDom(html, seasonSlug);
   return { games, source: games.length > 0 ? "dom" : "none" };
@@ -42,9 +54,33 @@ export function parseSchedulePage(html: string, seasonSlug: string): SchedulePar
 
 // ---------------------------------------------------------------- nextdata
 
+/** Every field name a contest's datetime has turned up under. */
+const DATE_KEYS = [
+  "date",
+  "contestDate",
+  "eventDate",
+  "dateString",
+  "startDate",
+  "startDateTime",
+  "gameDate",
+  "scheduledDate",
+];
+
+/** …and its separate display time, when the feed splits them. */
+const TIME_KEYS = [
+  "time",
+  "timeString",
+  "displayTime",
+  "startTime",
+  "gameTime",
+  "contestTime",
+  "scheduledTime",
+  "timeOfDay",
+];
+
 /** A contest object has some kind of date plus some kind of opponent. */
 function looksLikeContest(obj: Record<string, unknown>): boolean {
-  const date = pick(obj, "date", "contestDate", "eventDate", "dateString", "startDate");
+  const date = pick(obj, ...DATE_KEYS);
   if (asString(date) === null) return false;
   const opp = pick(obj, "opponent", "opponentName", "opponentSchoolName", "opponentMascot");
   if (opp === undefined) return false;
@@ -68,10 +104,11 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
       );
     }
     if (!opponent) continue;
+    // Our own team is not an opponent. Some shapes list both sides of the
+    // contest; taking the wrong one renames every game after ourselves.
+    if (isOwnTeam(opponent)) continue;
 
-    const dateRaw = asString(
-      pick(obj, "date", "contestDate", "eventDate", "dateString", "startDate")
-    );
+    const dateRaw = asString(pick(obj, ...DATE_KEYS));
     const isoDate = normalizeDate(dateRaw, seasonSlug);
     if (!isoDate) continue;
     if (!isValidIsoDate(isoDate)) {
@@ -140,9 +177,15 @@ function parseFromNextData(root: unknown, seasonSlug: string): ParsedGame[] {
       .map(([, v]) => v as string)
       .join(" ")
       .toLowerCase();
+    // The kickoff is usually the time component of the contest datetime, not
+    // a field of its own — read the explicit field first, then fall back to
+    // the datetime rather than leaving the column empty.
+    const timeText =
+      normalizeTimeText(asString(pick(obj, ...TIME_KEYS))) ?? timeFromDateTime(dateRaw);
+
     games.push({
       isoDate,
-      timeText: asString(pick(obj, "time", "timeString", "displayTime")),
+      timeText,
       opponent: opponent.replace(/\*\s*$/, "").trim(),
       homeAway,
       isConference:
@@ -206,13 +249,9 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
     if (!dateMatch) return;
     seenUrls.add(matchUrl);
 
-    // Same defense for the clock: an hour must not be glued to a preceding
-    // number, and must be a real 12-hour time (no "87:15pm").
-    const timeMatch = text.match(/(?<![\d:])(\d{1,2}):([0-5]\d)\s*([ap]\.?m\.?)/i);
-    const timeText =
-      timeMatch && parseInt(timeMatch[1], 10) >= 1 && parseInt(timeMatch[1], 10) <= 12
-        ? `${timeMatch[1]}:${timeMatch[2]}${timeMatch[3].toLowerCase().replace(/\./g, "")}`
-        : null;
+    // Same defense for the clock, plus the formats MaxPreps actually prints:
+    // "7:15pm", "7:15 PM", "7 p.m.", and the odd 24-hour "19:15".
+    const timeText = normalizeTimeText(text);
 
     const isoDate =
       (dateMatch[3]
@@ -244,7 +283,7 @@ function parseFromDom(html: string, seasonSlug: string): ParsedGame[] {
       const m = text.match(/(?:vs\.?|@)\s*([A-Za-z][A-Za-z .'&()-]+?)(?=\s*(?:\d|W\b|L\b|T\b|Preview|Box|$))/i);
       opponent = m ? m[1].trim().replace(/\*\s*$/, "") : "";
     }
-    if (!opponent) return;
+    if (!opponent || isOwnTeam(opponent)) return;
 
     let teamScore: number | null = null;
     let opponentScore: number | null = null;
@@ -284,6 +323,16 @@ function timeIsNotScore(s: string): boolean {
   return !s.includes(":");
 }
 
+/**
+ * True when a scraped "opponent" is really us. Both the school name and the
+ * mascot show up as row text, and a row that names ourselves means the
+ * opponent extraction picked the wrong side.
+ */
+function isOwnTeam(name: string): boolean {
+  const n = name.toLowerCase().replace(/[^a-z]/g, "");
+  return n.includes(TEAM_NAME_HINT.toLowerCase()) || n.includes("panthers");
+}
+
 // ----------------------------------------------------------------- helpers
 
 /**
@@ -311,8 +360,10 @@ function normalizeResult(r: string | null): "W" | "L" | "T" | null {
  */
 export function normalizeDate(raw: string | null, seasonSlug: string): string | null {
   if (!raw) return null;
-  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // ISO-ish datetimes resolve in the team's timezone: "…T22:00:00Z" is a
+  // 6pm Eastern kickoff on the 16th, not a game on the 17th.
+  const iso = dateFromDateTime(raw);
+  if (iso) return iso;
   const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (us) {
     const year = us[3].length === 2 ? 2000 + parseInt(us[3], 10) : parseInt(us[3], 10);

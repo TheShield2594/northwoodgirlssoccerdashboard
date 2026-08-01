@@ -15,6 +15,11 @@ export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv"];
 // opponent's on match pages.
 export const TEAM_NAME_HINT = "NorthWood";
 
+// Nappanee is in Indiana's Eastern-time zone. Kickoff datetimes that carry a
+// UTC offset get resolved against this, so an evening game keeps its own
+// calendar date instead of rolling forward with UTC.
+export const TEAM_TIMEZONE = "America/Indiana/Indianapolis";
+
 // Season slugs, current -> oldest, matching MaxPreps' URL scheme. The
 // CURRENT season lives at the bare URL with no slug segment; historical
 // seasons get the slug in the path. Girls soccer in Indiana is a fall

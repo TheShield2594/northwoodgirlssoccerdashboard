@@ -13,7 +13,7 @@
  */
 import { CURRENT_SEASON_SLUG, TEAM_NAME_HINT, TeamLevel, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
 import { fetchHtml } from "./http.js";
-import { extractNextData } from "./parse/nextdata.js";
+import { extractJsonSources, extractNextData } from "./parse/nextdata.js";
 import { parseSchedulePage } from "./parse/schedule.js";
 import { parseRosterPage } from "./parse/roster.js";
 import { parseStatsPage } from "./parse/stats.js";
@@ -23,10 +23,17 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const level = (args[0] === "jv" ? "jv" : "varsity") as TeamLevel;
 const season = args[1] ?? CURRENT_SEASON_SLUG;
 
+/** Always worth printing: which embedded-JSON layers the page even has.
+ *  "flight" means App Router; "NONE" means the DOM fallback is guessing. */
+function dumpLayers(html: string) {
+  const kinds = extractJsonSources(html).map((s) => s.kind);
+  console.log(`  embedded JSON layers: ${kinds.length ? kinds.join(", ") : "NONE — DOM fallback is the only layer"}`);
+}
+
 function dumpNextDataShape(html: string) {
   const next = extractNextData(html) as Record<string, unknown> | null;
   if (!next) {
-    console.log("  __NEXT_DATA__: NOT FOUND — page may have moved off Next.js; DOM fallback is the only layer");
+    console.log("  __NEXT_DATA__: NOT FOUND (Pages Router only) — see the layer list above");
     return;
   }
   console.log("  __NEXT_DATA__ top-level keys:", Object.keys(next).join(", "));
@@ -55,11 +62,14 @@ async function main() {
   if (!schedHtml) {
     console.log("  fetch failed (404 or network) — check the URL in a browser\n");
   } else {
+    dumpLayers(schedHtml);
     const sched = parseSchedulePage(schedHtml, season);
     console.log(`  parsed ${sched.games.length} games via ${sched.source}`);
+    const timed = sched.games.filter((g) => g.timeText !== null).length;
+    console.log(`  kickoff times present on ${timed}/${sched.games.length} games`);
     for (const g of sched.games.slice(0, 5)) {
       console.log(
-        `    ${g.isoDate} ${g.homeAway === "away" ? "@" : "vs"} ${g.opponent}` +
+        `    ${g.isoDate} ${g.timeText ?? "--:--"} ${g.homeAway === "away" ? "@" : "vs"} ${g.opponent}` +
           (g.result ? ` — ${g.result} ${g.teamScore}-${g.opponentScore}` : " (unplayed)") +
           (g.isConference ? " [conf]" : "")
       );
@@ -73,6 +83,7 @@ async function main() {
       console.log(`\nBOX SCORE ${played.matchUrl}`);
       const boxHtml = await fetchHtml(played.matchUrl);
       if (boxHtml) {
+        dumpLayers(boxHtml);
         const box = parseBoxScorePage(boxHtml, TEAM_NAME_HINT);
         console.log(`  parsed ${box.lines.length} player lines via ${box.source}`);
         for (const l of box.lines.slice(0, 5)) console.log(`    ${l.playerName}:`, l.stats);
@@ -90,6 +101,7 @@ async function main() {
   console.log(`\nROSTER ${rUrl}`);
   const rosterHtml = await fetchHtml(rUrl);
   if (rosterHtml) {
+    dumpLayers(rosterHtml);
     const roster = parseRosterPage(rosterHtml);
     console.log(`  parsed ${roster.entries.length} entries via ${roster.source}`);
     for (const e of roster.entries.slice(0, 5)) {
@@ -105,6 +117,7 @@ async function main() {
   console.log(`\nSTATS ${sUrl}`);
   const statsHtml = await fetchHtml(sUrl);
   if (statsHtml) {
+    dumpLayers(statsHtml);
     const stats = parseStatsPage(statsHtml);
     console.log(`  parsed ${stats.lines.length} stat lines via ${stats.source}`);
     for (const l of stats.lines.slice(0, 5)) console.log(`    ${l.playerName}:`, l.stats);

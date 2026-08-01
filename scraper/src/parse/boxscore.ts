@@ -1,4 +1,5 @@
-import { asNumber, asString, deepFindObjects, extractNextData, pick } from "./nextdata.js";
+import { cleanNameCell, toGivenNameOrder } from "./names.js";
+import { asNumber, asString, deepFindObjects, extractJsonSources, pick } from "./nextdata.js";
 import { JSON_FIELD_MAP, parseTablesFromDom, ParsedStatLine, StatsParseResult } from "./stats.js";
 
 /**
@@ -10,10 +11,9 @@ import { JSON_FIELD_MAP, parseTablesFromDom, ParsedStatLine, StatsParseResult } 
  * is case-insensitive.
  */
 export function parseBoxScorePage(html: string, teamNameHint: string): StatsParseResult {
-  const next = extractNextData(html);
-  if (next) {
-    const lines = parseFromNextData(next, teamNameHint);
-    if (lines.length > 0) return { lines, source: "nextdata", unmappedHeaders: [] };
+  for (const { kind, root } of extractJsonSources(html)) {
+    const lines = parseFromNextData(root, teamNameHint);
+    if (lines.length > 0) return { lines, source: kind, unmappedHeaders: [] };
   }
   return parseTablesFromDom(html, teamNameHint);
 }
@@ -36,8 +36,10 @@ function parseFromNextData(root: unknown, teamNameHint: string): ParsedStatLine[
       return hasName && Object.keys(obj).some((k) => JSON_FIELD_MAP[k.toLowerCase()]);
     });
     for (const { value: obj } of rows) {
-      const playerName = asString(pick(obj, "athleteName", "playerName", "fullName", "name"));
-      if (!playerName || playerName.toLowerCase().includes(hint)) continue;
+      const rawName = asString(pick(obj, "athleteName", "playerName", "fullName", "name"));
+      if (!rawName || rawName.toLowerCase().includes(hint)) continue;
+      const playerName = toGivenNameOrder(cleanNameCell(rawName));
+      if (!playerName) continue;
       const line: ParsedStatLine = byName.get(playerName) ?? {
         playerName,
         jerseyNumber: asString(pick(obj, "jersey", "jerseyNumber")),

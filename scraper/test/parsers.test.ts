@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseSchedulePage, normalizeDate, resolveGameDate } from "../src/parse/schedule.js";
 import { parseRosterPage } from "../src/parse/roster.js";
+import { normalizePlayerName } from "../src/parse/names.js";
+import { normalizeTimeText, timeFromDateTime } from "../src/parse/datetime.js";
 import { parseStatsPage, parseTablesFromDom } from "../src/parse/stats.js";
 import { parseBoxScorePage } from "../src/parse/boxscore.js";
 
@@ -212,5 +214,142 @@ describe("date helpers", () => {
     expect(normalizeDate("8/18/2025", "25-26")).toBe("2025-08-18");
     expect(normalizeDate("8/18", "25-26")).toBe("2025-08-18");
     expect(normalizeDate("garbage", "25-26")).toBeNull();
+  });
+});
+
+describe("schedule parser — App Router flight payload", () => {
+  const { games, source } = parseSchedulePage(fixture("schedule-flight.html"), "25-26");
+
+  it("reads page data when there is no __NEXT_DATA__ at all", () => {
+    expect(source).toBe("flight");
+    expect(games).toHaveLength(3);
+  });
+
+  it("reassembles a contest split across two push() chunks", () => {
+    const g = games.find((g) => g.opponent === "Lakeland")!;
+    expect(g.matchUrl).toContain("lakeland-vs-northwood.htm?c=f-1");
+    expect(g.result).toBe("W");
+    expect(g.teamScore).toBe(8);
+  });
+
+  it("takes the kickoff time from the contest datetime", () => {
+    expect(games.find((g) => g.opponent === "Lakeland")!.timeText).toBe("5:30pm");
+  });
+
+  it("resolves a zoned datetime in the team's timezone, not UTC", () => {
+    // 2025-08-22T00:15Z is 8:15pm on the 21st in Indiana — the naive read
+    // would file this game a day late with no time at all.
+    const g = games.find((g) => g.opponent.startsWith("Warsaw"))!;
+    expect(g.isoDate).toBe("2025-08-21");
+    expect(g.timeText).toBe("8:15pm");
+  });
+
+  it("treats midnight as 'no time given' rather than 12:00am", () => {
+    const g = games.find((g) => g.opponent === "Penn")!;
+    expect(g.isoDate).toBe("2025-10-09");
+    expect(g.timeText).toBeNull();
+  });
+
+  it("is not confused by a bracket inside a JSON string", () => {
+    expect(games.map((g) => g.opponent)).toContain("Warsaw [not a bracket bug]");
+  });
+});
+
+describe("schedule parser — kickoff times in the DOM fallback", () => {
+  const { games } = parseSchedulePage(fixture("schedule-dom.html"), "25-26");
+
+  it("keeps the times the rows show", () => {
+    expect(games.some((g) => g.timeText !== null)).toBe(true);
+  });
+});
+
+describe("time normalization", () => {
+  it("accepts the display formats MaxPreps prints", () => {
+    expect(normalizeTimeText("7:15pm")).toBe("7:15pm");
+    expect(normalizeTimeText("7:15 PM")).toBe("7:15pm");
+    expect(normalizeTimeText("7:15 p.m.")).toBe("7:15pm");
+    expect(normalizeTimeText("7 pm")).toBe("7:00pm");
+    expect(normalizeTimeText("10:00AM")).toBe("10:00am");
+    expect(normalizeTimeText("19:15")).toBe("7:15pm");
+  });
+
+  it("returns null rather than inventing a time", () => {
+    expect(normalizeTimeText("TBA")).toBeNull();
+    expect(normalizeTimeText("TBD")).toBeNull();
+    expect(normalizeTimeText("")).toBeNull();
+    expect(normalizeTimeText(null)).toBeNull();
+    // "5 A" is five assists, and "Sep 5 at Penn" is a fixture line — neither
+    // is 5:00am.
+    expect(normalizeTimeText("5 A")).toBeNull();
+    expect(normalizeTimeText("Sep 5 at Penn")).toBeNull();
+    expect(normalizeTimeText("W 8-0")).toBeNull();
+  });
+
+  it("pulls the clock out of a datetime", () => {
+    expect(timeFromDateTime("2025-08-16T17:30:00")).toBe("5:30pm");
+    expect(timeFromDateTime("2025-08-16T00:00:00")).toBeNull();
+    expect(timeFromDateTime("2025-08-16")).toBeNull();
+    expect(timeFromDateTime("not a date")).toBeNull();
+  });
+});
+
+describe("roster parser — App Router flight payload", () => {
+  const { entries, source } = parseRosterPage(fixture("roster-flight.html"));
+
+  it("imports the roster when there is no __NEXT_DATA__", () => {
+    expect(source).toBe("flight");
+    expect(entries).toHaveLength(2);
+  });
+
+  it("keeps an athlete that carries an SEO title", () => {
+    const avery = entries.find((e) => e.fullName === "Avery Miller")!;
+    expect(avery).toBeDefined();
+    expect(avery.jerseyNumber).toBe("9");
+    expect(avery.grade).toBe("Sr");
+  });
+
+  it("still drops the coach", () => {
+    expect(entries.map((e) => e.fullName)).not.toContain("Dana Whitfield");
+  });
+});
+
+describe("roster parser — plain table, surname-first names", () => {
+  const { entries, source } = parseRosterPage(fixture("roster-dom-table.html"));
+
+  it("reads a roster whose names are not links", () => {
+    expect(source).toBe("dom");
+    expect(entries).toHaveLength(3);
+  });
+
+  it("flips 'Miller, Avery' into 'Avery Miller'", () => {
+    const avery = entries.find((e) => e.fullName === "Avery Miller")!;
+    expect(avery.jerseyNumber).toBe("9");
+    expect(avery.position).toBe("Forward");
+    expect(avery.grade).toBe("Sr");
+  });
+
+  it("handles a particled surname", () => {
+    expect(entries.map((e) => e.fullName)).toContain("Ruby van Dyke");
+  });
+
+  it("skips the coaching-staff row and the 'View Schedule' link", () => {
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Dana Whitfield");
+    expect(names).not.toContain("View Schedule");
+  });
+});
+
+describe("player-name canonicalization", () => {
+  it("joins the same athlete across pages that spell her differently", () => {
+    expect(normalizePlayerName("Miller, Avery")).toBe("Avery Miller");
+    expect(normalizePlayerName("#9 Avery Miller")).toBe("Avery Miller");
+    expect(normalizePlayerName("Avery Miller Sr.")).toBe("Avery Miller");
+  });
+
+  it("rejects link text that merely looks like a name", () => {
+    expect(normalizePlayerName("View Profile")).toBeNull();
+    expect(normalizePlayerName("Full Roster")).toBeNull();
+    expect(normalizePlayerName("Avery")).toBeNull();
+    expect(normalizePlayerName("")).toBeNull();
   });
 });
