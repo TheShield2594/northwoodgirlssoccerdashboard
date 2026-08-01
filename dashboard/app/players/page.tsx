@@ -102,12 +102,13 @@ export default async function PlayersPage({
           <div className="card-head"><h2>No roster</h2></div>
           <div className="card-body">
             <p className="sub">
-              MaxPreps lists no players for {bundle.season.label} {levelLabel(level)}
-              {bundle.games.length > 0
-                ? " — the schedule imported, but this team's roster page has no athletes on it."
-                : "."}{" "}
+              No players were imported for {bundle.season.label} {levelLabel(level)}
+              {bundle.games.length > 0 ? " — though its schedule was." : "."}{" "}
               Rosters are entered by the coaching staff, so a season that has just
-              started often has none yet.
+              started often has none on MaxPreps yet. If you expect players here,
+              the scraper log for this season says which it is: it reports the
+              athlete count MaxPreps itself gives, and flags a mismatch as an
+              error.
             </p>
           </div>
         </section>

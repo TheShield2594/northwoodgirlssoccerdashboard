@@ -102,19 +102,30 @@ export function decodeFlightPayload(html: string): string | null {
   const MARKER = "self.__next_f.push(";
   const chunks: string[] = [];
 
+  // A dropped chunk leaves a hole mid-JSON, so the rest of the stream can
+  // fail to parse for reasons that look like a bad predicate. Count them.
+  let dropped = 0;
+
   let at = html.indexOf(MARKER);
   while (at !== -1) {
     let i = at + MARKER.length;
     while (i < html.length && /\s/.test(html[i])) i++;
-    if (html[i] === "[") {
-      const end = scanBalanced(html, i);
-      if (end !== -1) {
-        const arr = tryParse(html.slice(i, end));
-        // push([1, "<chunk>"]) — other tags (0 = bootstrap) carry no data.
-        if (Array.isArray(arr) && typeof arr[1] === "string") chunks.push(arr[1]);
-      }
+    const end = html[i] === "[" ? scanBalanced(html, i) : -1;
+    const arr = end === -1 ? undefined : tryParse(html.slice(i, end));
+    // push([1, "<chunk>"]) — other tags (0 = bootstrap) carry no data and are
+    // not a loss; anything else we failed to read is.
+    if (Array.isArray(arr)) {
+      if (typeof arr[1] === "string") chunks.push(arr[1]);
+    } else {
+      dropped++;
     }
     at = html.indexOf(MARKER, at + MARKER.length);
+  }
+
+  if (dropped > 0) {
+    console.warn(
+      `[nextdata] ${dropped} flight chunk(s) could not be read — the reassembled payload is incomplete`
+    );
   }
 
   return chunks.length > 0 ? chunks.join("") : null;
@@ -168,6 +179,12 @@ export function extractJsonFragments(text: string, maxFragments = 5000): unknown
       }
     }
     at = text.indexOf('{"', next);
+  }
+
+  if (fragments.length >= maxFragments) {
+    console.warn(
+      `[nextdata] stopped at the ${maxFragments}-fragment cap — the flight payload was not fully searched`
+    );
   }
 
   return fragments;

@@ -257,7 +257,7 @@ The scraper reads MaxPreps' own season picker off the team home page. That
 payload states every level and year that exists, plus the canonical URL for
 each, so nothing is guessed:
 
-```
+```text
 [run] discovered 71 published season/level combos from the site's season picker
       (levels: freshman, jv, varsity); scraping 6
 ```

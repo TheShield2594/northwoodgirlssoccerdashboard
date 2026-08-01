@@ -14,6 +14,9 @@ const LEVEL_BASE: Record<TeamLevel, string> = {
 // a given season just 404 and are skipped, so listing all three is free.
 export const TEAM_LEVELS: TeamLevel[] = ["varsity", "jv", "freshman"];
 
+/** For validating a level discovered from the site against what we support. */
+export const TEAM_LEVEL_SET: ReadonlySet<string> = new Set<string>(TEAM_LEVELS);
+
 /** The varsity team's current-season home page — the one that carries the
  *  season picker every level and year is discovered from. */
 export const teamHomeUrl = () => `${LEVEL_BASE.varsity}/`;
@@ -21,6 +24,10 @@ export const teamHomeUrl = () => `${LEVEL_BASE.varsity}/`;
 // The school-name hint used to tell NorthWood's tables/rows apart from the
 // opponent's on match pages.
 export const TEAM_NAME_HINT = "NorthWood";
+
+// The mascot shows up in row text as often as the school name does, and an
+// "opponent" matching either means the extraction grabbed the wrong side.
+export const TEAM_MASCOT_HINT = "Panthers";
 
 // Nappanee is in Indiana's Eastern-time zone. Kickoff datetimes that carry a
 // UTC offset get resolved against this, so an evening game keeps its own

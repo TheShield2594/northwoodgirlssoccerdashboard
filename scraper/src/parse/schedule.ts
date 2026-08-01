@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { TEAM_NAME_HINT } from "../config.js";
+import { TEAM_MASCOT_HINT, TEAM_NAME_HINT } from "../config.js";
 import {
   ParseSource,
   absoluteUrl,
@@ -329,8 +329,11 @@ function timeIsNotScore(s: string): boolean {
  * opponent extraction picked the wrong side.
  */
 function isOwnTeam(name: string): boolean {
-  const n = name.toLowerCase().replace(/[^a-z]/g, "");
-  return n.includes(TEAM_NAME_HINT.toLowerCase()) || n.includes("panthers");
+  // Both sides get the same treatment, or a hint containing a space or period
+  // would never match the stripped name.
+  const strip = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+  const n = strip(name);
+  return n.includes(strip(TEAM_NAME_HINT)) || n.includes(strip(TEAM_MASCOT_HINT));
 }
 
 // ----------------------------------------------------------------- helpers

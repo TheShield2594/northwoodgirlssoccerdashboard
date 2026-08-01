@@ -75,11 +75,15 @@ function looksLikeRosterEntry(obj: Record<string, unknown>): boolean {
   );
 }
 
+/** One list, used by both the JSON filter and the table-row filter — they
+ *  drifted apart, so "Statistician" was dropped from JSON but kept in HTML. */
+const STAFF_TITLE = /coach|manager|trainer|director|staff|statistician/i;
+
 /** A staff-ish word in a role/title/position value means this isn't a player. */
 function looksLikeStaff(obj: Record<string, unknown>): boolean {
   for (const key of ["role", "title", "coachType", "jobTitle", "position", "staffType"]) {
     const value = asString(pick(obj, key));
-    if (value && /coach|manager|trainer|director|staff|statistician/i.test(value)) return true;
+    if (value && STAFF_TITLE.test(value)) return true;
   }
   return false;
 }
@@ -187,10 +191,14 @@ function parseRosterTable($: cheerio.CheerioAPI): ParsedRosterEntry[] {
       .find("thead th, thead td")
       .map((__, th) => $(th).text().trim().toUpperCase())
       .get();
+    // Remember which row the headers came from when there's no <thead>: the
+    // row loop below walks every <tr>, and a header row built from <td> cells
+    // would otherwise be read as a player ("Player Name" passes as a name).
+    let headerRow: unknown = null;
     if (headers.length === 0) {
-      headers = $table
-        .find("tr")
-        .first()
+      const first = $table.find("tr").first();
+      headerRow = first.get(0) ?? null;
+      headers = first
         .find("th, td")
         .map((__, c) => $(c).text().trim().toUpperCase())
         .get();
@@ -204,6 +212,7 @@ function parseRosterTable($: cheerio.CheerioAPI): ParsedRosterEntry[] {
     const posIdx = find(/^POS|POSITION/);
 
     $table.find("tbody tr, tr").each((__, tr) => {
+      if (headerRow !== null && tr === headerRow) return;
       const cells = $(tr)
         .find("td")
         .map((___, td) => $(td).text().replace(/\s+/g, " ").trim())
@@ -213,7 +222,7 @@ function parseRosterTable($: cheerio.CheerioAPI): ParsedRosterEntry[] {
       const name = normalizePlayerName(cells[nameIdx]);
       if (!name || seen.has(name)) return;
       const rowText = cells.join(" ");
-      if (/coach|manager|trainer|director/i.test(rowText)) return;
+      if (STAFF_TITLE.test(rowText)) return;
       seen.add(name);
 
       const href = $(tr).find("a[href]").first().attr("href") || null;

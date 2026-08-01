@@ -241,7 +241,7 @@ describe("schedule parser — App Router flight payload", () => {
   it("resolves a zoned datetime in the team's timezone, not UTC", () => {
     // 2025-08-22T00:15Z is 8:15pm on the 21st in Indiana — the naive read
     // would file this game a day late with no time at all.
-    const g = games.find((g) => g.opponent.startsWith("Warsaw"))!;
+    const g = games.find((g) => g.matchUrl.includes("c=f-2"))!;
     expect(g.isoDate).toBe("2025-08-21");
     expect(g.timeText).toBe("8:15pm");
   });
@@ -261,7 +261,8 @@ describe("schedule parser — kickoff times in the DOM fallback", () => {
   const { games } = parseSchedulePage(fixture("schedule-dom.html"), "25-26");
 
   it("keeps the times the rows show", () => {
-    expect(games.some((g) => g.timeText !== null)).toBe(true);
+    // The fixture's three rows print 10:00am, 7:15pm and 7:00pm.
+    expect(games.map((g) => g.timeText).sort()).toEqual(["10:00am", "7:00pm", "7:15pm"]);
   });
 });
 
@@ -395,8 +396,13 @@ describe("roster parser — a genuinely empty roster (real 26-27 page)", () => {
     expect(entries).toHaveLength(0);
   });
 
-  it("does not mistake the Staff (4) tab for players", () => {
-    expect(entries).toHaveLength(0);
+  it("does not mistake the tab labels for players", () => {
+    // "Players (0)" and "Staff (4)" are two capitalized-word anchors, the
+    // same shape as a name — they must not become roster entries.
+    const names = entries.map((e) => e.fullName);
+    expect(names).not.toContain("Players");
+    expect(names).not.toContain("Staff");
+    expect(names.join(" ")).not.toMatch(/staff|players/i);
   });
 });
 
@@ -437,5 +443,64 @@ describe("season discovery from the site's own picker", () => {
     expect(pageUrlFor(jv, "roster")).toBe(
       "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls/jv/25-26/roster/"
     );
+  });
+});
+
+describe("review fixes", () => {
+  it("keeps a header row built from <td> out of the roster", () => {
+    // No <thead>, and the header cells are <td> — the row loop used to read
+    // "Player Name" as a person because both tokens are capitalized.
+    const html = `<table>
+      <tr><td>#</td><td>Player Name</td><td>Pos</td><td>Yr</td></tr>
+      <tr><td>9</td><td>Miller, Avery</td><td>Forward</td><td>Senior</td></tr>
+    </table>`;
+    const names = parseRosterPage(html).entries.map((e) => e.fullName);
+    expect(names).toEqual(["Avery Miller"]);
+  });
+
+  it("keeps a name with diacritics", () => {
+    expect(normalizePlayerName("Núñez, Sofía")).toBe("Sofía Núñez");
+    expect(normalizePlayerName("Chloé Beaumont")).toBe("Chloé Beaumont");
+  });
+
+  it("treats a Statistician as staff in the table fallback too", () => {
+    const html = `<table>
+      <thead><tr><th>#</th><th>Name</th><th>Pos</th></tr></thead>
+      <tbody>
+        <tr><td>9</td><td>Miller, Avery</td><td>Forward</td></tr>
+        <tr><td></td><td>Reed, Dana</td><td>Statistician</td></tr>
+      </tbody>
+    </table>`;
+    const names = parseRosterPage(html).entries.map((e) => e.fullName);
+    expect(names).toEqual(["Avery Miller"]);
+  });
+
+  it("only strips a whole trailing page segment from a picker URL", () => {
+    const base = "https://www.maxpreps.com/in/nappanee/northwood-panthers/soccer/girls";
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      p: [
+        { year: "25-26", teamLevel: "Varsity", canonicalUrl: `${base}/25-26/team-stats/` },
+        { year: "24-25", teamLevel: "Varsity", canonicalUrl: `${base}/24-25/schedule.aspx` },
+      ],
+    })}</script>`;
+    const found = parseSeasonPicker(html);
+    // "team-stats" is not the "stats" page segment and must survive intact.
+    expect(pageUrlFor(found.find((s) => s.seasonSlug === "25-26")!, "roster")).toBe(
+      `${base}/25-26/team-stats/roster/`
+    );
+    expect(pageUrlFor(found.find((s) => s.seasonSlug === "24-25")!, "roster")).toBe(
+      `${base}/24-25/roster/`
+    );
+  });
+
+  it("rejects our own mascot as an opponent", () => {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      contests: [
+        { date: "2025-08-16T17:30:00", opponent: { name: "Panthers" }, canonicalUrl: "/games/a.htm" },
+        { date: "2025-08-18T17:30:00", opponent: { name: "Lakeland" }, canonicalUrl: "/games/b.htm" },
+      ],
+    })}</script>`;
+    const { games } = parseSchedulePage(html, "25-26");
+    expect(games.map((g) => g.opponent)).toEqual(["Lakeland"]);
   });
 });

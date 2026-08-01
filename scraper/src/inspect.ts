@@ -46,6 +46,29 @@ function detectKind(path: string, html: string): Kind {
   return "schedule";
 }
 
+/**
+ * An empty roster is only a bug when the page says it should have players.
+ * `expectedCount` is what tells the two apart, so say which one this is.
+ */
+function verdictFor(parsed: number, expected: number | null): string | null {
+  if (expected === 0) {
+    return "MaxPreps lists no athletes for this team — nothing to import, not a parser failure.";
+  }
+  if (parsed === 0) {
+    return (
+      "JSON is present but no players matched" +
+      (expected !== null ? ` while the page reports ${expected} athletes` : "") +
+      " — the shape predicate in src/parse/roster.ts needs re-aiming against this page."
+    );
+  }
+  if (expected !== null && parsed !== expected) {
+    return `Parsed ${parsed} players but the page reports ${expected} — some rows are being missed.`;
+  }
+  return null;
+}
+
+let rosterVerdict: string | null = null;
+
 const html = readFileSync(file, "utf8");
 const kind = (args[1] as Kind) ?? detectKind(file, html);
 
@@ -72,11 +95,15 @@ if (kind === "schedule") {
   }
   if (games.length > 10) console.log(`     … ${games.length - 10} more`);
 } else if (kind === "roster") {
-  const { entries, source } = parseRosterPage(html);
-  console.log(`   ${entries.length} roster entries via ${source}`);
+  const { entries, source, expectedCount } = parseRosterPage(html);
+  console.log(
+    `   ${entries.length} roster entries via ${source}` +
+      (expectedCount !== null ? `; page reports ${expectedCount} athletes` : "")
+  );
   for (const e of entries) {
     console.log(`     #${e.jerseyNumber ?? "?"} ${e.fullName} ${e.position ?? ""} ${e.grade ?? ""}`);
   }
+  rosterVerdict = verdictFor(entries.length, expectedCount);
 } else {
   const res = kind === "stats" ? parseStatsPage(html) : parseBoxScorePage(html, TEAM_NAME_HINT);
   console.log(`   ${res.lines.length} stat lines via ${res.source}`);
@@ -86,7 +113,6 @@ if (kind === "schedule") {
 
 if (sources.length === 0) {
   console.log("\n   No embedded JSON at all — the parser is guessing from markup.");
-} else if (kind === "roster" && parseRosterPage(html).entries.length === 0) {
-  console.log("\n   JSON is present but no players matched — the shape predicate in");
-  console.log("   src/parse/roster.ts needs re-aiming against this page.");
+} else if (rosterVerdict) {
+  console.log(`\n   ${rosterVerdict}`);
 }

@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import {
   TEAM_LEVELS,
+  TEAM_LEVEL_SET,
   TEAM_NAME_HINT,
   TeamLevel,
   currentSeasonSlug,
@@ -63,7 +64,11 @@ interface ScrapeTarget {
   stats: string;
 }
 
-function targetFromDiscovery(s: DiscoveredSeason): ScrapeTarget {
+/** null for a level this build doesn't know — see planRun, which warns. */
+function targetFromDiscovery(s: DiscoveredSeason): ScrapeTarget | null {
+  // An unrecognized level would be stored in a column the dashboard filters
+  // on, so it would import and then be invisible. Skip it loudly instead.
+  if (!TEAM_LEVEL_SET.has(s.level)) return null;
   return {
     level: s.level,
     seasonSlug: s.seasonSlug,
@@ -142,6 +147,7 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
   // Roster
   const keptPlayerSeasonIds: number[] = [];
   let rosterOk = false;
+  let statsOk = false;
   const rosterUrlForSeason = target.roster;
   const rosterHtml = await fetchHtml(rosterUrlForSeason);
   if (!rosterHtml) {
@@ -175,7 +181,9 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
         );
       }
       warnIfGuessing(`${level} ${seasonSlug} roster`, roster.source);
-      rosterOk = true;
+      // Only a roster we actually believe may drive a prune. Parsing zero
+      // players off a page that claims some is a failure, not an empty squad.
+      rosterOk = !(roster.entries.length === 0 && expected !== 0);
     } catch (err) {
       console.error(
         `[scrape] ${level} ${seasonSlug}: roster failed:`,
@@ -197,6 +205,7 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
       }
       console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
       warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
+      statsOk = true;
     } catch (err) {
       console.error(
         `[scrape] ${level} ${seasonSlug}: stats failed:`,
@@ -211,13 +220,18 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
     if (gameErrors > 0) {
       console.warn(`[scrape]   skipping game prune: ${gameErrors} game(s) errored this run`);
     }
-    if (!rosterOk) {
-      console.warn(`[scrape]   skipping roster prune: the roster did not scrape cleanly`);
+    // Stats creates roster rows too (for players who appear only there), so
+    // its ids are part of the kept set — pruning without them would delete
+    // every stats-only player.
+    if (!rosterOk || !statsOk) {
+      console.warn(
+        `[scrape]   skipping roster prune: ${!rosterOk ? "the roster" : "the stats page"} did not scrape cleanly`
+      );
     }
     const removed = await pruneSeason(
       seasonId,
       gameErrors > 0 ? null : keptGameUrls,
-      rosterOk ? keptPlayerSeasonIds : null
+      rosterOk && statsOk ? keptPlayerSeasonIds : null
     );
     if (removed.games || removed.rosterEntries || removed.players) {
       console.log(
@@ -250,7 +264,15 @@ async function planRun(): Promise<ScrapeTarget[]> {
       `[run] discovered ${usable.length} published season/level combos from the site's season picker ` +
         `(levels: ${levels.join(", ")}); scraping ${chosen.length}`
     );
-    if (chosen.length > 0) return chosen.map(targetFromDiscovery);
+    const unknown = [...new Set(chosen.map((s) => s.level))].filter((l) => !TEAM_LEVEL_SET.has(l));
+    if (unknown.length > 0) {
+      console.warn(
+        `[run] skipping unrecognized team level(s): ${unknown.join(", ")} — ` +
+          `add them to TEAM_LEVELS in config.ts (and the dashboard's level list) to import them`
+      );
+    }
+    const targets = chosen.map(targetFromDiscovery).filter((t): t is ScrapeTarget => t !== null);
+    if (targets.length > 0) return targets;
     console.warn(`[run] discovery found nothing matching ${[...wanted].join(", ")}; using generated slugs`);
   } else {
     console.warn(

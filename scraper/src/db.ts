@@ -183,32 +183,47 @@ export async function pruneSeason(
   // run (a fetch failed, a parse threw, the page came back empty). Absence of
   // evidence is not evidence of absence: skip rather than delete. Deleting on
   // an empty set would turn one bad fetch into a wiped season.
-  const games =
-    keptGameUrls !== null && keptGameUrls.length > 0
-      ? await pool.query(
-          `DELETE FROM games WHERE season_id = $1 AND NOT (maxpreps_url = ANY($2::text[]))`,
-          [seasonId, keptGameUrls]
-        )
-      : { rowCount: 0 };
-  const rosterEntries =
-    keptPlayerSeasonIds !== null && keptPlayerSeasonIds.length > 0
-      ? await pool.query(
-          `DELETE FROM player_seasons WHERE season_id = $1 AND NOT (id = ANY($2::int[]))`,
-          [seasonId, keptPlayerSeasonIds]
-        )
-      : { rowCount: 0 };
-  // A player who is now on no roster and has no box-score line was a parsing
-  // artifact ("View Profile", a mangled name). Nothing references her.
-  const players = await pool.query(
-    `DELETE FROM players p
-      WHERE NOT EXISTS (SELECT 1 FROM player_seasons ps WHERE ps.player_id = p.id)
-        AND NOT EXISTS (SELECT 1 FROM game_player_stats gs WHERE gs.player_id = p.id)`
-  );
-  return {
-    games: games.rowCount ?? 0,
-    rosterEntries: rosterEntries.rowCount ?? 0,
-    players: players.rowCount ?? 0,
-  };
+  // All three deletes in one transaction: the orphan-player sweep depends on
+  // the roster delete having happened, so a failure between them would leave
+  // players stranded with no roster row and no way to notice.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const games =
+      keptGameUrls !== null && keptGameUrls.length > 0
+        ? await client.query(
+            `DELETE FROM games WHERE season_id = $1 AND NOT (maxpreps_url = ANY($2::text[]))`,
+            [seasonId, keptGameUrls]
+          )
+        : { rowCount: 0 };
+    const rosterEntries =
+      keptPlayerSeasonIds !== null && keptPlayerSeasonIds.length > 0
+        ? await client.query(
+            `DELETE FROM player_seasons WHERE season_id = $1 AND NOT (id = ANY($2::int[]))`,
+            [seasonId, keptPlayerSeasonIds]
+          )
+        : { rowCount: 0 };
+    // A player who is now on no roster and has no box-score line was a parsing
+    // artifact ("View Profile", a mangled name). Nothing references her.
+    const players = await client.query(
+      `DELETE FROM players p
+        WHERE NOT EXISTS (SELECT 1 FROM player_seasons ps WHERE ps.player_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM game_player_stats gs WHERE gs.player_id = p.id)`
+    );
+
+    await client.query("COMMIT");
+    return {
+      games: games.rowCount ?? 0,
+      rosterEntries: rosterEntries.rowCount ?? 0,
+      players: players.rowCount ?? 0,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function gameNeedsBoxScore(gameId: number): Promise<boolean> {

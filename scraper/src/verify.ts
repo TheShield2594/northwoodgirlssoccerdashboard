@@ -20,7 +20,8 @@ import { parseStatsPage } from "./parse/stats.js";
 import { parseBoxScorePage } from "./parse/boxscore.js";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const level = (args[0] === "jv" ? "jv" : "varsity") as TeamLevel;
+const level: TeamLevel =
+  args[0] === "jv" ? "jv" : args[0] === "freshman" ? "freshman" : "varsity";
 const season = args[1] ?? currentSeasonSlug();
 
 /** Always worth printing: which embedded-JSON layers the page even has.
@@ -103,11 +104,21 @@ async function main() {
   if (rosterHtml) {
     dumpLayers(rosterHtml);
     const roster = parseRosterPage(rosterHtml);
-    console.log(`  parsed ${roster.entries.length} entries via ${roster.source}`);
+    console.log(
+      `  parsed ${roster.entries.length} entries via ${roster.source}` +
+        (roster.expectedCount !== null ? `; page reports ${roster.expectedCount} athletes` : "")
+    );
     for (const e of roster.entries.slice(0, 5)) {
       console.log(`    #${e.jerseyNumber ?? "?"} ${e.fullName} ${e.position ?? ""} ${e.grade ?? ""}`);
     }
-    if (roster.entries.length === 0) dumpNextDataShape(rosterHtml);
+    if (roster.expectedCount === 0) {
+      console.log("  MaxPreps lists no athletes for this team — nothing to import, not a parser failure");
+    } else if (roster.entries.length === 0) {
+      console.log("  0 parsed — the shape predicate needs re-aiming:");
+      dumpNextDataShape(rosterHtml);
+    } else if (roster.expectedCount !== null && roster.entries.length !== roster.expectedCount) {
+      console.log(`  MISMATCH: parsed ${roster.entries.length}, page reports ${roster.expectedCount}`);
+    }
   } else {
     console.log("  fetch failed");
   }

@@ -52,7 +52,9 @@ export function parseSeasonPicker(html: string): DiscoveredSeason[] {
         // Entries point at either the team home ('…/girls/jv/') or a specific
         // page ('…/girls/jv/25-26/schedule/'); normalize to the directory
         // both forms share.
-        baseUrl: canonicalUrl.replace(/(schedule|roster|stats)\/?$/, ""),
+        // Anchored on the leading slash so a segment like "team-stats" keeps
+        // its prefix; an optional extension covers "…/schedule.aspx".
+        baseUrl: canonicalUrl.replace(/\/(schedule|roster|stats)(\.[a-z]+)?\/?$/i, "/"),
         // Absent means published — only the picker's own entries carry it.
         isPublished: pick(obj, "isPublished") !== false,
       });

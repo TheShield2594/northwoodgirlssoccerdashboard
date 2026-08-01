@@ -14,7 +14,7 @@ const UI_WORDS =
 
 /** First and last tokens start uppercase (interior caps like McKenna or
  *  O'Brien are fine); middle tokens may be lowercase particles (van, de). */
-const PERSON_NAME = /^[A-Z][A-Za-z'’.-]*(\s+[A-Za-z'’.-]+)*\s+[A-Z][A-Za-z'’.-]*$/;
+const PERSON_NAME = /^\p{Lu}[\p{L}'’.-]*(\s+[\p{L}'’.-]+)*\s+\p{Lu}[\p{L}'’.-]*$/u;
 
 /** Strip decorations a name cell carries: jersey number, trailing grade. */
 export function cleanNameCell(raw: string): string {
@@ -32,7 +32,7 @@ export function cleanNameCell(raw: string): string {
 export function toGivenNameOrder(name: string): string {
   // The surname side allows spaces so particled names ("van Dyke, Ruby")
   // survive; exactly one comma, so "Smith, A., Jones, B." is left alone.
-  const comma = name.match(/^([A-Za-z'’. -]+),\s*([A-Za-z'’. -]+)$/);
+  const comma = name.match(/^([\p{L}'’. -]+),\s*([\p{L}'’. -]+)$/u);
   return comma ? `${comma[2].trim()} ${comma[1].trim()}` : name;
 }
 
