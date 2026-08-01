@@ -150,6 +150,20 @@ Things `verify` may surface:
   Capture the page (below) and re-aim the parser against it; do not trust
   anything the DOM fallback imported in the meantime.
 
+### Inspecting a page already on disk
+
+Every fetched page is cached in the `scrapecache` volume at `/cache`, so a
+page that imported badly can be re-parsed exactly as the scraper saw it —
+no network, no database:
+
+```bash
+docker exec <scraper> ls /cache
+docker exec <scraper> npm run inspect -- /cache/<file>.html
+```
+
+It prints which JSON layers the page has and every row the parser got out,
+which separates "the parser is wrong" from "the page never arrived".
+
 ### Capturing real pages
 
 To fix a parser properly you need the HTML MaxPreps actually served:
@@ -211,6 +225,7 @@ scraper/
   src/parse/boxscore.ts     # per-game player lines (best effort)
   src/verify.ts             # live diagnostic (npm run verify)
   src/capture.ts            # save raw page HTML (npm run capture)
+  src/inspect.ts            # parse a local HTML file (npm run inspect)
   test/                     # fixture tests for both parser layers
 dashboard/
   app/                      # Overview, Schedule, Players, Players/[id], History
@@ -218,6 +233,25 @@ dashboard/
   lib/demo.ts               # bannered sample dataset (fictional players)
   lib/data.ts               # Postgres reads with automatic demo fallback
 ```
+
+## Season rollover
+
+MaxPreps serves the current season from the bare URL (`…/soccer/girls/schedule/`)
+and every other season from a slugged one (`…/soccer/girls/24-25/schedule/`),
+so which season counts as "current" decides which URL gets fetched. The
+cutover is July 1.
+
+`currentSeasonSlug()` / `seasonSlugs()` in `scraper/src/config.ts` are
+**functions, evaluated per run, not constants**. That is deliberate: the
+scraper is a single long-lived process with a daily cron, so a value frozen
+at import time would outlive the rollover. A container started in June would
+still call the old year "current" in August — fetching the new season's page
+from the bare URL, filing its games under the old season's row, and never
+scraping the new season at all.
+
+Daily runs scrape the current season **and the previous one**, since box
+scores and final stat lines get entered days after the last whistle, and
+because the new season's page may not exist yet in early July.
 
 ## Notes
 

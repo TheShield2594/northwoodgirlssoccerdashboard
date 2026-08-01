@@ -26,26 +26,48 @@ export const TEAM_TIMEZONE = "America/Indiana/Indianapolis";
 // sport, so the season starting in the fall of year Y is "Y-(Y+1)".
 // A new slug becomes current on July 1 (MaxPreps rolls its "current
 // season" over in the summer).
-function currentSeasonStartYear(now = new Date()): number {
+//
+// These are FUNCTIONS, not constants, and that is load-bearing. The scraper
+// runs as one long-lived process with a daily cron, so a value computed at
+// import time is frozen for the container's whole life. A container started
+// before July 1 would still call the old year "current" months later —
+// and because the current season is the one served from the BARE url, that
+// means fetching the new season's page and filing its games under the old
+// season's row, while the new season never gets scraped at all.
+//
+export function currentSeasonStartYear(now = new Date()): number {
   const y = now.getFullYear() % 100;
   return now.getMonth() >= 6 ? y : y - 1; // July (month 6) or later = new season
 }
 
-function buildSeasonSlugs(): string[] {
+function slugForStartYear(start: number): string {
+  const end = (start + 1) % 100;
+  return `${String(start).padStart(2, "0")}-${String(end).padStart(2, "0")}`;
+}
+
+/** Every season slug, current -> oldest. e.g. ["26-27","25-26",...,"10-11"] */
+export function seasonSlugs(now = new Date()): string[] {
   const slugs: string[] = [];
-  for (let start = currentSeasonStartYear(); start >= 10; start--) {
-    const end = (start + 1) % 100;
-    slugs.push(`${String(start).padStart(2, "0")}-${String(end).padStart(2, "0")}`);
+  for (let start = currentSeasonStartYear(now); start >= 10; start--) {
+    slugs.push(slugForStartYear(start));
   }
   return slugs;
 }
 
-export const SEASON_SLUGS = buildSeasonSlugs(); // e.g. ["26-27","25-26",...,"10-11"]
-export const CURRENT_SEASON_SLUG = SEASON_SLUGS[0];
+export function currentSeasonSlug(now = new Date()): string {
+  return slugForStartYear(currentSeasonStartYear(now));
+}
+
+/** The season just ended. Still worth scraping daily for a while: box scores
+ *  and final stat lines get entered days after the last whistle, and it
+ *  covers the window where the new season's page doesn't exist yet. */
+export function previousSeasonSlug(now = new Date()): string {
+  return slugForStartYear(currentSeasonStartYear(now) - 1);
+}
 
 function pageUrl(level: TeamLevel, seasonSlug: string, page: string): string {
   const base = LEVEL_BASE[level];
-  return seasonSlug === CURRENT_SEASON_SLUG
+  return seasonSlug === currentSeasonSlug()
     ? `${base}/${page}/`
     : `${base}/${seasonSlug}/${page}/`;
 }

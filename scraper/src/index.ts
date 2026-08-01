@@ -1,13 +1,14 @@
 import cron from "node-cron";
 import {
-  CURRENT_SEASON_SLUG,
-  SEASON_SLUGS,
   TEAM_LEVELS,
   TEAM_NAME_HINT,
   TeamLevel,
+  currentSeasonSlug,
+  previousSeasonSlug,
   rosterUrl,
   scheduleUrl,
   statsUrl,
+  seasonSlugs,
 } from "./config.js";
 import { fetchHtml } from "./http.js";
 import type { ParseSource } from "./parse/nextdata.js";
@@ -52,9 +53,12 @@ function warnIfGuessing(what: string, source: ParseSource): void {
 }
 
 async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void> {
-  const schedHtml = await fetchHtml(scheduleUrl(level, seasonSlug));
+  const schedUrl = scheduleUrl(level, seasonSlug);
+  const schedHtml = await fetchHtml(schedUrl);
   if (!schedHtml) {
-    console.log(`[scrape] ${level} ${seasonSlug}: no schedule page (season/level likely doesn't exist), skipping`);
+    console.log(
+      `[scrape] ${level} ${seasonSlug}: no schedule page at ${schedUrl} (season/level likely doesn't exist), skipping`
+    );
     return;
   }
 
@@ -65,7 +69,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
     );
     return;
   }
-  console.log(`[scrape] ${level} ${seasonSlug}: ${games.length} games via ${source}`);
+  console.log(`[scrape] ${level} ${seasonSlug}: ${games.length} games via ${source} (${schedUrl})`);
   warnIfGuessing(`${level} ${seasonSlug} schedule`, source);
   const withTimes = games.filter((g) => g.timeText !== null).length;
   if (withTimes === 0) {
@@ -77,6 +81,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
   const seasonId = await upsertSeason(seasonSlug, seasonLabel(seasonSlug), level);
 
   const keptGameUrls: string[] = [];
+  let gameErrors = 0;
   for (const g of games) {
     // One unusable game must not take the season down with it — the rest of
     // the schedule, plus the roster and stats below, still need to be scraped.
@@ -94,6 +99,7 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
         }
       }
     } catch (err) {
+      gameErrors++;
       console.error(
         `[scrape]   skipping game ${g.isoDate} vs ${g.opponent} (${g.matchUrl}):`,
         err instanceof Error ? err.message : err
@@ -103,41 +109,70 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
 
   // Roster
   const keptPlayerSeasonIds: number[] = [];
+  let rosterOk = false;
   const rosterUrlForSeason = rosterUrl(level, seasonSlug);
   const rosterHtml = await fetchHtml(rosterUrlForSeason);
   if (!rosterHtml) {
     console.warn(`[scrape] ${level} ${seasonSlug}: roster page unreachable (${rosterUrlForSeason})`);
   } else {
-    const roster = parseRosterPage(rosterHtml);
-    for (const entry of roster.entries) {
-      keptPlayerSeasonIds.push(await upsertRosterEntry(seasonId, entry));
-    }
-    console.log(`[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}`);
-    if (roster.entries.length === 0) {
-      // Silent zero here is what let an entire season import with no players.
-      console.warn(
-        `[scrape]   WARNING: roster page fetched but 0 players parsed (${rosterUrlForSeason}) — run \`npm run verify ${level} ${seasonSlug}\``
+    // Isolated: a roster failure must not cost this season its stats too.
+    try {
+      const roster = parseRosterPage(rosterHtml);
+      for (const entry of roster.entries) {
+        keptPlayerSeasonIds.push(await upsertRosterEntry(seasonId, entry));
+      }
+      console.log(`[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}`);
+      if (roster.entries.length === 0) {
+        // Silent zero here is what let an entire season import with no players.
+        console.warn(
+          `[scrape]   WARNING: roster page fetched but 0 players parsed (${rosterUrlForSeason}) — run \`npm run verify ${level} ${seasonSlug}\``
+        );
+      }
+      warnIfGuessing(`${level} ${seasonSlug} roster`, roster.source);
+      rosterOk = true;
+    } catch (err) {
+      console.error(
+        `[scrape] ${level} ${seasonSlug}: roster failed:`,
+        err instanceof Error ? err.message : err
       );
     }
-    warnIfGuessing(`${level} ${seasonSlug} roster`, roster.source);
   }
 
   // Season aggregate stats
   const statsHtml = await fetchHtml(statsUrl(level, seasonSlug));
   if (statsHtml) {
-    const stats = parseStatsPage(statsHtml);
-    if (stats.lines.length > 0) {
-      keptPlayerSeasonIds.push(...(await saveSeasonStats(seasonId, stats.lines)));
+    try {
+      const stats = parseStatsPage(statsHtml);
+      if (stats.lines.length > 0) {
+        keptPlayerSeasonIds.push(...(await saveSeasonStats(seasonId, stats.lines)));
+      }
+      if (stats.unmappedHeaders.length > 0) {
+        console.log(`[scrape]   unmapped stat columns (add to STAT_COLUMN_MAP?): ${stats.unmappedHeaders.join(", ")}`);
+      }
+      console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
+      warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
+    } catch (err) {
+      console.error(
+        `[scrape] ${level} ${seasonSlug}: stats failed:`,
+        err instanceof Error ? err.message : err
+      );
     }
-    if (stats.unmappedHeaders.length > 0) {
-      console.log(`[scrape]   unmapped stat columns (add to STAT_COLUMN_MAP?): ${stats.unmappedHeaders.join(", ")}`);
-    }
-    console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
-    warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
   }
 
   if (PRUNE) {
-    const removed = await pruneSeason(seasonId, keptGameUrls, keptPlayerSeasonIds);
+    // Prune only what this run fully accounted for. A partial pass is a
+    // scraper failure, not evidence that the missing rows should go.
+    if (gameErrors > 0) {
+      console.warn(`[scrape]   skipping game prune: ${gameErrors} game(s) errored this run`);
+    }
+    if (!rosterOk) {
+      console.warn(`[scrape]   skipping roster prune: the roster did not scrape cleanly`);
+    }
+    const removed = await pruneSeason(
+      seasonId,
+      gameErrors > 0 ? null : keptGameUrls,
+      rosterOk ? keptPlayerSeasonIds : null
+    );
     if (removed.games || removed.rosterEntries || removed.players) {
       console.log(
         `[scrape] ${level} ${seasonSlug}: pruned ${removed.games} stale game(s), ` +
@@ -148,10 +183,14 @@ async function scrapeSeason(level: TeamLevel, seasonSlug: string): Promise<void>
 }
 
 async function runFullScrape(): Promise<void> {
-  const slugs = BACKFILL ? SEASON_SLUGS : [CURRENT_SEASON_SLUG];
+  // Resolved per run, never at import: this process outlives the July 1
+  // season rollover, and a frozen "current season" silently scrapes the
+  // wrong year (see config.ts).
+  const current = currentSeasonSlug();
+  const slugs = BACKFILL ? seasonSlugs() : [current, previousSeasonSlug()];
   console.log(
-    `[run] scraping ${TEAM_LEVELS.join("+")} x ${slugs.length} season(s)` +
-      `${BACKFILL ? " (backfill)" : ""}${PRUNE ? " (prune)" : ""}`
+    `[run] scraping ${TEAM_LEVELS.join("+")} x ${slugs.length} season(s) [${slugs.join(", ")}]` +
+      `${BACKFILL ? " (backfill)" : ""}${PRUNE ? " (prune)" : ""}; current season is ${current}`
   );
   for (const level of TEAM_LEVELS) {
     for (const slug of slugs) {

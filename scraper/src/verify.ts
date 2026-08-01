@@ -11,7 +11,7 @@
  * keys and a few candidate arrays so re-aiming the shape predicates in
  * src/parse/*.ts is quick.
  */
-import { CURRENT_SEASON_SLUG, TEAM_NAME_HINT, TeamLevel, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
+import { TEAM_NAME_HINT, TeamLevel, currentSeasonSlug, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
 import { fetchHtml } from "./http.js";
 import { extractJsonSources, extractNextData } from "./parse/nextdata.js";
 import { parseSchedulePage } from "./parse/schedule.js";
@@ -21,7 +21,7 @@ import { parseBoxScorePage } from "./parse/boxscore.js";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const level = (args[0] === "jv" ? "jv" : "varsity") as TeamLevel;
-const season = args[1] ?? CURRENT_SEASON_SLUG;
+const season = args[1] ?? currentSeasonSlug();
 
 /** Always worth printing: which embedded-JSON layers the page even has.
  *  "flight" means App Router; "NONE" means the DOM fallback is guessing. */

@@ -176,18 +176,22 @@ export async function saveSeasonStats(
  */
 export async function pruneSeason(
   seasonId: number,
-  keptGameUrls: string[],
-  keptPlayerSeasonIds: number[]
+  keptGameUrls: string[] | null,
+  keptPlayerSeasonIds: number[] | null
 ): Promise<{ games: number; rosterEntries: number; players: number }> {
-  const games = await pool.query(
-    `DELETE FROM games WHERE season_id = $1 AND NOT (maxpreps_url = ANY($2::text[]))`,
-    [seasonId, keptGameUrls]
-  );
-  // An empty kept-set means the roster page failed or parsed to nothing —
-  // that is a scraper problem, not an empty squad. Deleting on it would turn
-  // one bad fetch into a wiped season, so leave the roster alone.
+  // A null kept-set means the caller could not vouch for that category this
+  // run (a fetch failed, a parse threw, the page came back empty). Absence of
+  // evidence is not evidence of absence: skip rather than delete. Deleting on
+  // an empty set would turn one bad fetch into a wiped season.
+  const games =
+    keptGameUrls !== null && keptGameUrls.length > 0
+      ? await pool.query(
+          `DELETE FROM games WHERE season_id = $1 AND NOT (maxpreps_url = ANY($2::text[]))`,
+          [seasonId, keptGameUrls]
+        )
+      : { rowCount: 0 };
   const rosterEntries =
-    keptPlayerSeasonIds.length > 0
+    keptPlayerSeasonIds !== null && keptPlayerSeasonIds.length > 0
       ? await pool.query(
           `DELETE FROM player_seasons WHERE season_id = $1 AND NOT (id = ANY($2::int[]))`,
           [seasonId, keptPlayerSeasonIds]

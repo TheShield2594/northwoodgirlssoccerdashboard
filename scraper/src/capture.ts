@@ -16,13 +16,13 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { CURRENT_SEASON_SLUG, TeamLevel, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
+import { TeamLevel, currentSeasonSlug, rosterUrl, scheduleUrl, statsUrl } from "./config.js";
 import { fetchHtml } from "./http.js";
 import { extractJsonSources } from "./parse/nextdata.js";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const level = (args[0] === "jv" ? "jv" : "varsity") as TeamLevel;
-const season = args[1] ?? CURRENT_SEASON_SLUG;
+const season = args[1] ?? currentSeasonSlug();
 const outDir = resolve(args[2] ?? "captured");
 
 async function capture(page: string, url: string): Promise<void> {

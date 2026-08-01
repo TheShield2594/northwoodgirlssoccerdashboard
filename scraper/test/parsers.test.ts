@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseSchedulePage, normalizeDate, resolveGameDate } from "../src/parse/schedule.js";
 import { parseRosterPage } from "../src/parse/roster.js";
 import { normalizePlayerName } from "../src/parse/names.js";
+import { currentSeasonSlug, previousSeasonSlug, seasonSlugs } from "../src/config.js";
 import { normalizeTimeText, timeFromDateTime } from "../src/parse/datetime.js";
 import { parseStatsPage, parseTablesFromDom } from "../src/parse/stats.js";
 import { parseBoxScorePage } from "../src/parse/boxscore.js";
@@ -351,5 +352,34 @@ describe("player-name canonicalization", () => {
     expect(normalizePlayerName("Full Roster")).toBeNull();
     expect(normalizePlayerName("Avery")).toBeNull();
     expect(normalizePlayerName("")).toBeNull();
+  });
+});
+
+describe("season rollover", () => {
+  const jun30 = new Date("2026-06-30T12:00:00");
+  const jul01 = new Date("2026-07-01T12:00:00");
+
+  it("rolls the current season over on July 1", () => {
+    expect(currentSeasonSlug(jun30)).toBe("25-26");
+    expect(currentSeasonSlug(jul01)).toBe("26-27");
+  });
+
+  it("keeps the previous season available across the rollover", () => {
+    expect(previousSeasonSlug(jul01)).toBe("25-26");
+  });
+
+  it("lists every season, newest first, back to 10-11", () => {
+    const slugs = seasonSlugs(jul01);
+    expect(slugs[0]).toBe("26-27");
+    expect(slugs[slugs.length - 1]).toBe("10-11");
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it("recomputes rather than freezing a value at import time", () => {
+    // The scraper is one long-lived process with a daily cron. If these were
+    // constants, a container started in June would still call 25-26 the
+    // current season in August — fetching the new season's page from the
+    // bare URL and filing its games under the old season.
+    expect(currentSeasonSlug(jun30)).not.toBe(currentSeasonSlug(jul01));
   });
 });
