@@ -237,17 +237,19 @@ function toIso(d: Date | string): string {
  * For a scraped dataset, freshness is the primary trust signal: after a
  * Friday night match the only question a visitor has is whether the site has
  * caught up yet. "Data scraped nightly" is a promise; this is the fact.
- * Returns null when the demo dataset is being served, or if the column can't
- * be read — the footer then falls back to the general statement.
+ *
+ * `demo` rides along because the footer must not make a scraping claim at all
+ * while the placeholder dataset is being served — nothing has been scraped,
+ * and the banner above it says as much.
  */
-export async function getLastUpdated(): Promise<string | null> {
-  if (!(await dbHasData())) return null;
+export async function getLastUpdated(): Promise<{ at: string | null; demo: boolean }> {
+  if (!(await dbHasData())) return { at: null, demo: true };
   const pool = getPool()!;
   try {
     const res = await pool.query(`SELECT MAX(scraped_at) AS at FROM games`);
     const at = res.rows[0]?.at;
-    return at ? new Date(at).toISOString() : null;
+    return { at: at ? new Date(at).toISOString() : null, demo: false };
   } catch {
-    return null;
+    return { at: null, demo: false };
   }
 }

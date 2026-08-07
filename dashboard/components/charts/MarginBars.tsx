@@ -48,6 +48,16 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
   const zeroY = PAD.top + (hi / span) * innerH;
   const scale = innerH / span;
 
+  // A tie sits astride the zero rule, but zero is only mid-plot when the
+  // season has margins on both sides of it. With no losses zero IS the
+  // bottom edge (and with no wins, the top), so the marker is clamped inside
+  // the plot rather than hanging into the x-axis gutter or over the top.
+  const TIE_H = 10;
+  const tieY = Math.min(
+    Math.max(zeroY - TIE_H / 2, PAD.top),
+    PAD.top + innerH - TIE_H
+  );
+
   const slot = innerW / points.length;
   const barW = Math.min(22, Math.max(4, slot - 2)); // 2px surface gap between bars
   const x = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
@@ -87,7 +97,7 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
                 /* A tie is a real data point at zero, not part of the axis —
                    given a visible height and held off the rule by a surface
                    -colored outline so it can't be mistaken for it. */
-                <rect x={bx} y={zeroY - 5} width={barW} height={10} rx={2.5}
+                <rect x={bx} y={tieY} width={barW} height={TIE_H} rx={2.5}
                       fill={color("T")} stroke="var(--card)" strokeWidth={1}
                       opacity={hover === null || hover === i ? 1 : 0.45} />
               ) : (

@@ -16,17 +16,22 @@ function fmtStamp(iso: string): string {
 }
 
 export default async function Footer() {
-  const lastUpdated = await getLastUpdated();
+  const { at, demo } = await getLastUpdated();
 
   return (
     <footer className="shell" style={{ paddingTop: 0 }}>
       <div className="footer">
         <span className="motto">Tradition of Excellence</span>
         <span>NorthWood Panthers · Girls Soccer · Northern Lakes Conference</span>
+        {/* No scraping claim while the placeholder dataset is being served —
+            nothing has been imported, and the banner at the top of the page
+            says the figures are fictional. */}
         <span>
-          {lastUpdated ? (
+          {demo ? (
+            "Sample data · nothing imported yet"
+          ) : at ? (
             <>
-              Updated <time dateTime={lastUpdated}>{fmtStamp(lastUpdated)}</time> from MaxPreps
+              Updated <time dateTime={at}>{fmtStamp(at)}</time> from MaxPreps
             </>
           ) : (
             "Data scraped nightly from MaxPreps"

@@ -74,6 +74,9 @@ export function niceScale(rawMax: number, targetSteps = 4, minStep = 1) {
  * clipped mid-string. Anchoring the ends inward keeps them on canvas.
  */
 export function tickAnchor(i: number, count: number): "start" | "middle" | "end" {
+  // A lone point is drawn at the centre of the plot, not on either edge, so
+  // it has no edge to be anchored away from.
+  if (count === 1) return "middle";
   if (i === 0) return "start";
   if (i === count - 1) return "end";
   return "middle";

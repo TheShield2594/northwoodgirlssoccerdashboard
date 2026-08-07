@@ -444,7 +444,6 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   display: flex;
   flex-direction: column;
 }
-.tile .t-value { margin-top: auto; }
 /* The micro-label is a type style in its own right, not a part of the tile —
    the record card's "Overall record" and "Last 6" captions use it too. */
 .t-label {
@@ -460,7 +459,11 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   font-size: 1.9rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin-top: 4px;
+  /* `auto` takes the row's slack so the values and their footnotes bottom-
+     align across tiles even when one shrinks to fit a long record; the
+     padding keeps the gap under the label when a tile has no slack left. */
+  margin-top: auto;
+  padding-top: 4px;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
