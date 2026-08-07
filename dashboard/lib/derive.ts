@@ -75,6 +75,16 @@ export function deriveSeason(bundle: SeasonBundle): SeasonDerived {
   };
 }
 
+/**
+ * Display order for team levels, most prominent first. This is also the
+ * order the default falls back through, so the dashboard's front door lands
+ * on the flagship squad rather than on whichever level the database happened
+ * to return first — `season_record` sorts `level ASC`, which is alphabetical
+ * and would otherwise open the site on JV (or on freshman once that squad
+ * exists).
+ */
+export const LEVEL_ORDER: Level[] = ["varsity", "jv", "freshman"];
+
 /** Pick the level/season selection from URL params, with sane defaults. */
 export function resolveSelection(
   seasons: SeasonInfo[],
@@ -87,7 +97,9 @@ export function resolveSelection(
   const level: Level =
     requestedLevel && seasons.some((s) => s.level === requestedLevel)
       ? requestedLevel
-      : seasons[0]?.level ?? "varsity";
+      : LEVEL_ORDER.find((l) => seasons.some((s) => s.level === l))
+        ?? seasons[0]?.level
+        ?? "varsity";
   const forLevel = seasons.filter((s) => s.level === level);
   const requested = searchParams.season;
   const season =

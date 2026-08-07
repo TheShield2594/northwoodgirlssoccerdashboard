@@ -8,7 +8,7 @@
  * Sizes to its container so axis labels stay at true pixel size on phones.
  */
 import { useState } from "react";
-import { labelStride, useChartWidth } from "./useChartWidth";
+import { labelStride, tickAnchor, useChartWidth } from "./useChartWidth";
 
 export interface MarginPoint {
   label: string;   // x label "8/16"
@@ -35,9 +35,18 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
 
   const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
-  const maxAbs = Math.max(1, ...points.map((p) => Math.abs(p.margin)));
-  const zeroY = PAD.top + innerH / 2;
-  const scale = innerH / 2 / maxAbs;
+
+  // Domain from the margins actually present, not a forced +/-maxAbs. A
+  // season with no losses used to spend its whole lower half on empty space
+  // and draw every bar at half the resolution it had room for — so the
+  // better the season, the smaller the chart. The zero line lands wherever
+  // the data puts it.
+  let hi = Math.max(0, ...points.map((p) => p.margin));
+  let lo = Math.min(0, ...points.map((p) => p.margin));
+  if (hi === 0 && lo === 0) { hi = 1; lo = -1; } // all draws: keep zero centred
+  const span = hi - lo;
+  const zeroY = PAD.top + (hi / span) * innerH;
+  const scale = innerH / span;
 
   const slot = innerW / points.length;
   const barW = Math.min(22, Math.max(4, slot - 2)); // 2px surface gap between bars
@@ -50,7 +59,7 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: "block" }} role="img" aria-label={ariaLabel}>
-        {[maxAbs, 0, -maxAbs].map((t) => (
+        {[...new Set([hi, 0, lo])].map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={zeroY - t * scale} y2={zeroY - t * scale} stroke={t === 0 ? "var(--hair-strong)" : "var(--hair)"} strokeWidth={1} />
             <text x={PAD.left - 6} y={zeroY - t * scale + 3} fontSize={10} fill="var(--muted)" textAnchor="end" fontFamily="var(--font-mono)">
@@ -75,7 +84,12 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
               {/* generous invisible hit target */}
               <rect x={PAD.left + i * slot} y={PAD.top} width={slot} height={innerH} fill="transparent" />
               {isTie ? (
-                <rect x={bx} y={zeroY - 3} width={barW} height={6} rx={2} fill={color("T")} opacity={hover === i ? 1 : 0.9} />
+                /* A tie is a real data point at zero, not part of the axis —
+                   given a visible height and held off the rule by a surface
+                   -colored outline so it can't be mistaken for it. */
+                <rect x={bx} y={zeroY - 5} width={barW} height={10} rx={2.5}
+                      fill={color("T")} stroke="var(--card)" strokeWidth={1}
+                      opacity={hover === null || hover === i ? 1 : 0.45} />
               ) : (
                 <rect
                   x={bx}
@@ -88,7 +102,7 @@ export default function MarginBars({ points, ariaLabel }: { points: MarginPoint[
                 />
               )}
               {i % step === 0 && (
-                <text x={PAD.left + i * slot + slot / 2} y={H - 6} fontSize={10} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
+                <text x={PAD.left + i * slot + slot / 2} y={H - 6} fontSize={10} fill="var(--muted)" textAnchor={tickAnchor(i, points.length)} fontFamily="var(--font-mono)">
                   {p.label}
                 </text>
               )}

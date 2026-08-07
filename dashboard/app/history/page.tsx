@@ -70,9 +70,11 @@ export default async function HistoryPage({
         <div className="tile-row">
           <div className="tile inverse">
             <div className="t-label">All-time record</div>
+            {/* One record is one string. The hyphens used to be `.unit`, which
+                rendered them smaller and gray — "69-32-18" read as three
+                unrelated numbers, worst on a phone. */}
             <div className="t-value">
-              {totalW}<span className="unit">-</span>{totalL}
-              {totalT > 0 && <><span className="unit">-</span>{totalT}</>}
+              {totalW}-{totalL}{totalT > 0 ? `-${totalT}` : ""}
             </div>
             <div className="t-sub">across {levelSeasons.length} seasons</div>
           </div>
@@ -123,7 +125,10 @@ export default async function HistoryPage({
         </section>
 
         <section className="card">
-          <div className="card-head"><h2>Season ledger</h2></div>
+          <div className="card-head">
+            <h2>Season ledger</h2>
+            <span className="note">season names open that year&apos;s overview</span>
+          </div>
           <div className="card-body table-scroll">
             <table className="data-table">
               <thead>
@@ -135,7 +140,6 @@ export default async function HistoryPage({
                   <th className="num col-optional">GF</th>
                   <th className="num col-optional">GA</th>
                   <th className="num">Diff</th>
-                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -143,7 +147,9 @@ export default async function HistoryPage({
                   const diff = s.goalsFor - s.goalsAgainst;
                   return (
                     <tr key={s.slug}>
-                      <td className="strong">{s.label}</td>
+                      <td className="strong col-grow">
+                        <Link href={withParams("/", level, s.slug)}>{s.label}</Link>
+                      </td>
                       <td className="num strong">{record(s)}</td>
                       <td className="num col-optional">{confRecord(s)}</td>
                       <td className="num">{Math.round(winPct(s) * 100)}%</td>
@@ -151,11 +157,6 @@ export default async function HistoryPage({
                       <td className="num col-optional">{s.goalsAgainst}</td>
                       <td className="num" style={{ color: diff > 0 ? "var(--red)" : diff < 0 ? "var(--muted)" : undefined, fontWeight: 600 }}>
                         {diff > 0 ? `+${diff}` : diff}
-                      </td>
-                      <td>
-                        <Link href={withParams("/", level, s.slug)} style={{ color: "var(--red-deep)", fontWeight: 700, fontSize: "0.78rem" }}>
-                          Open →
-                        </Link>
                       </td>
                     </tr>
                   );

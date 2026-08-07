@@ -63,46 +63,49 @@ export default async function OverviewPage({
       </div>
 
       <div className="grid-31">
-        {/* ------------------------------------------------ left column */}
+        {/* ------------------------------- main column: how the season went */}
         <div className="stack">
           {/* record card */}
           <section className="card ruled">
-            <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 26, alignItems: "center", paddingTop: 18 }}>
-              <div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.64rem", fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
-                  Overall record
+            <div className="card-body record-card">
+              <div className="record-figure">
+                <div className="t-label">Overall record</div>
+                <div className="record-value">{record(s)}</div>
+              </div>
+              <div className="record-facts">
+                <div>
+                  <span className="badge red">NLC</span>
+                  <strong>{confRecord(s)}</strong>
+                  <span className="fact-tail">in conference</span>
                 </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "3.2rem", fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.05, fontVariantNumeric: "tabular-nums" }}>
-                  {record(s)}
+                <div>
+                  <span className="badge">GD</span>
+                  <strong>{d.goalDiff > 0 ? `+${d.goalDiff}` : d.goalDiff}</strong>
+                  <span className="fact-tail">goal differential</span>
+                </div>
+                <div>
+                  <span className="badge">H/A</span>
+                  <strong>{d.homeRecord}</strong>
+                  <span className="fact-tail">home ·</span>
+                  <strong>{d.awayRecord}</strong>
+                  <span className="fact-tail">away</span>
                 </div>
               </div>
-              <div style={{ borderLeft: "1px solid var(--hair)", paddingLeft: 26, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: "0.82rem" }}>
-                  <span className="badge red" style={{ marginRight: 8 }}>NLC</span>
-                  <strong style={{ fontFamily: "var(--font-mono)" }}>{confRecord(s)}</strong>
-                  <span style={{ color: "var(--muted)" }}> in conference</span>
-                </div>
-                <div style={{ fontSize: "0.82rem" }}>
-                  <span className="badge" style={{ marginRight: 8 }}>GD</span>
-                  <strong style={{ fontFamily: "var(--font-mono)" }}>{d.goalDiff > 0 ? `+${d.goalDiff}` : d.goalDiff}</strong>
-                  <span style={{ color: "var(--muted)" }}> goal differential</span>
-                </div>
-                <div style={{ fontSize: "0.82rem" }}>
-                  <span className="badge" style={{ marginRight: 8 }}>H/A</span>
-                  <strong style={{ fontFamily: "var(--font-mono)" }}>{d.homeRecord}</strong>
-                  <span style={{ color: "var(--muted)" }}> home · </span>
-                  <strong style={{ fontFamily: "var(--font-mono)" }}>{d.awayRecord}</strong>
-                  <span style={{ color: "var(--muted)" }}> away</span>
-                </div>
-              </div>
-              <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.64rem", fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 6 }}>
-                  Last 6 · streak {d.streak}
-                </div>
-                <div className="form-dots" style={{ justifyContent: "flex-end" }}>
+              <div className="record-form">
+                <div className="t-label">Last 6 · streak {d.streak}</div>
+                <div className="form-dots">
                   {d.form.map((g) => (
-                    <span key={g.id} className={`form-dot ${g.result}`} title={`${g.result} ${g.teamScore}-${g.opponentScore} ${g.homeAway === "away" ? "@" : "vs"} ${g.opponent}`}>
+                    <span
+                      key={g.id}
+                      className={`form-dot ${g.result}`}
+                      title={`${g.result} ${g.teamScore}-${g.opponentScore} ${g.homeAway === "away" ? "@" : "vs"} ${g.opponent}`}
+                    >
                       {g.result}
+                      {/* the letter alone is meaningless out of context, so the
+                          accessible name carries the whole result */}
+                      <span className="sr-only">
+                        {` ${g.teamScore}-${g.opponentScore} ${g.homeAway === "away" ? "away at" : "home vs"} ${g.opponent}`}
+                      </span>
                     </span>
                   ))}
                 </div>
@@ -110,11 +113,13 @@ export default async function OverviewPage({
             </div>
           </section>
 
-          {/* stat tiles */}
+          {/* Stat tiles. Exactly one tile carries emphasis — win rate, the
+              headline of the four — so the row has a single entry point.
+              Clean sheets used to compete for it with the inverse fill. */}
           <div className="tile-row">
-            <div className="tile accent">
+            <div className="tile inverse">
               <div className="t-label">Win rate</div>
-              <div className="t-value">{Math.round(d.winPct * 100)}<span className="unit">%</span></div>
+              <div className="t-value"><span className="red">{Math.round(d.winPct * 100)}</span><span className="unit">%</span></div>
               <div className="t-sub">{s.wins} wins in {d.played.length} played</div>
             </div>
             <div className="tile">
@@ -127,46 +132,13 @@ export default async function OverviewPage({
               <div className="t-value">{d.goalsAgainstPerGame.toFixed(1)}</div>
               <div className="t-sub">{s.goalsAgainst} conceded</div>
             </div>
-            <div className="tile inverse">
+            <div className="tile">
               <div className="t-label">Clean sheets</div>
-              <div className="t-value"><span className="red">{d.shutouts}</span></div>
+              <div className="t-value">{d.shutouts}</div>
               <div className="t-sub">{Math.round(d.cleanSheetPct * 100)}% of matches</div>
             </div>
           </div>
 
-          {/* scoring trend */}
-          <section className="card">
-            <div className="card-head">
-              <h2>Scoring trend</h2>
-              <span className="note">goals for vs. against, by match</span>
-            </div>
-            <div className="card-body">
-              <DualTrendChart
-                points={trendPoints}
-                aLabel="For"
-                bLabel="Against"
-                ariaLabel={`Goals for and against by match, ${s.label} ${levelLabel(level)}`}
-              />
-            </div>
-          </section>
-
-          {/* margins */}
-          <section className="card">
-            <div className="card-head">
-              <h2>Match margins</h2>
-              <span className="note">goal differential per game</span>
-            </div>
-            <div className="card-body">
-              <MarginBars
-                points={marginPoints}
-                ariaLabel={`Goal margin by game, ${s.label} ${levelLabel(level)}`}
-              />
-            </div>
-          </section>
-        </div>
-
-        {/* ----------------------------------------------- right column */}
-        <div className="stack">
           {/* next / last match */}
           <section className="card ruled">
             <div className="card-head">
@@ -207,21 +179,60 @@ export default async function OverviewPage({
                 <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>Schedule not posted yet.</p>
               )}
 
-              {/* short upcoming list */}
+              {/* Short upcoming list, ruled off from the featured fixture above
+                  it. Kickoff time takes the right-hand column — where a played
+                  match shows its score — instead of the dashed placeholder chip
+                  that used to sit there reading like a rendering failure. */}
+              <div className="match-list">
               {d.upcoming.slice(nextGame ? 1 : 0, 4).map((g) => (
                 <div className="match-row" key={g.id}>
                   <div className="m-date">{fmtDateLong(g.date)}</div>
                   <div>
                     <div className="m-opp">{g.homeAway === "away" ? "@ " : "vs "}{g.opponent}</div>
-                    <div className="m-meta">{g.time ?? ""}{g.isConference ? " · conf" : ""}</div>
+                    <div className="m-meta">
+                      {g.isPlayoff ? "Playoff" : g.isConference ? "Conference" : g.isTournament ? "Tournament" : "Non-conference"}
+                    </div>
                   </div>
-                  <span className="chip none">·</span>
+                  <span className="m-time">{g.time ?? "TBD"}</span>
                 </div>
               ))}
+              </div>
             </div>
           </section>
 
-          {/* leaders */}
+          {/* scoring trend */}
+          <section className="card">
+            <div className="card-head">
+              <h2>Scoring trend</h2>
+              <span className="note">goals for vs. against, by match</span>
+            </div>
+            <div className="card-body">
+              <DualTrendChart
+                points={trendPoints}
+                aLabel="For"
+                bLabel="Against"
+                ariaLabel={`Goals for and against by match, ${s.label} ${levelLabel(level)}`}
+              />
+            </div>
+          </section>
+
+          {/* margins */}
+          <section className="card">
+            <div className="card-head">
+              <h2>Match margins</h2>
+              <span className="note">goal differential per game</span>
+            </div>
+            <div className="card-body">
+              <MarginBars
+                points={marginPoints}
+                ariaLabel={`Goal margin by game, ${s.label} ${levelLabel(level)}`}
+              />
+            </div>
+          </section>
+        </div>
+
+        {/* ------------------------------------------ rail: who did the scoring */}
+        <div className="stack">
           <section className="card">
             <div className="card-head">
               <h2>Golden boot</h2>

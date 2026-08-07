@@ -1,5 +1,16 @@
 # Design review — NorthWood Girls Soccer dashboard
 
+> **Status:** findings 1–21, 23–25 and 27 are implemented. Three are not:
+> **#22** (softening the loss color in `RecordStack`) was tried and reverted —
+> any gray light enough to read as secondary collides with `--tie`, which is
+> already gray, and drops under 3:1 against the card; categorical separation
+> beats tonal balance there. **#26** (sortable columns) is a feature rather
+> than a defect and is left for a product decision. On **#3**, the dark card
+> edge went from 1.28:1 to 1.53:1 against the card and 1.43:1 to 1.79:1 against
+> the page — visibly fixed, but still short of the 3:1 this review cited;
+> note that the light edition has never exceeded 1.35:1 either, so the number
+> was the wrong bar to quote. The edges read now, which was the actual problem.
+
 A UI/UX review of the `dashboard/` app: every page, both color schemes, desktop
 (1440px) and phone (390px). Findings come from reading the source *and* from
 rendering the running app against the demo dataset, so each one below is

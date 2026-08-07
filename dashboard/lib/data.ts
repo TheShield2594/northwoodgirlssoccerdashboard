@@ -230,3 +230,24 @@ function toIso(d: Date | string): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+/**
+ * When the scraper last wrote a game row.
+ *
+ * For a scraped dataset, freshness is the primary trust signal: after a
+ * Friday night match the only question a visitor has is whether the site has
+ * caught up yet. "Data scraped nightly" is a promise; this is the fact.
+ * Returns null when the demo dataset is being served, or if the column can't
+ * be read — the footer then falls back to the general statement.
+ */
+export async function getLastUpdated(): Promise<string | null> {
+  if (!(await dbHasData())) return null;
+  const pool = getPool()!;
+  try {
+    const res = await pool.query(`SELECT MAX(scraped_at) AS at FROM games`);
+    const at = res.rows[0]?.at;
+    return at ? new Date(at).toISOString() : null;
+  } catch {
+    return null;
+  }
+}
