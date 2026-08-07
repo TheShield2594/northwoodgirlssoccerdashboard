@@ -5,6 +5,7 @@
  * so it survives navigation and is shareable/bookmarkable.
  */
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LEVEL_ORDER } from "@/lib/derive";
 import { levelLabel } from "@/lib/format";
 import type { Level, SeasonInfo } from "@/lib/types";
 
@@ -22,9 +23,10 @@ export default function Controls({
   const params = useSearchParams();
 
   // Driven by what the scraper found, not a hardcoded pair, so a newly
-  // added squad shows up on its own. Fixed display order.
-  const ORDER: Level[] = ["varsity", "jv", "freshman"];
-  const levels = ORDER.filter((l) => seasons.some((s) => s.level === l));
+  // added squad shows up on its own. Display order — and the order the
+  // default selection falls through — is LEVEL_ORDER, shared with
+  // resolveSelection so the filled segment always matches what loaded.
+  const levels = LEVEL_ORDER.filter((l) => seasons.some((s) => s.level === l));
   const seasonsForLevel = seasons.filter((s) => s.level === level);
 
   function push(nextLevel: Level, nextSeason: string) {

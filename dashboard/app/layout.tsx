@@ -7,6 +7,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
 import "@fontsource/kaushan-script/400.css";
 import "./globals.css";
+import Footer from "@/components/Footer";
 import TopBar from "@/components/TopBar";
 
 export const metadata: Metadata = {
@@ -38,13 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a className="skip-link" href="#main">Skip to main content</a>
         <TopBar />
         <main className="shell" id="main">{children}</main>
-        <footer className="shell" style={{ paddingTop: 0 }}>
-          <div className="footer">
-            <span className="motto">Tradition of Excellence</span>
-            <span>NorthWood Panthers · Girls Soccer · Northern Lakes Conference</span>
-            <span>Data scraped nightly from MaxPreps</span>
-          </div>
-        </footer>
+        <Footer />
       </body>
     </html>
   );

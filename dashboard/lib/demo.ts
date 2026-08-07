@@ -112,10 +112,16 @@ class DemoDB {
     // ---- program trajectory: win probability drifts up over the years
     SEASON_START_YEARS.forEach((year, idx) => {
       const strength = 0.34 + 0.026 * idx + (rng() - 0.5) * 0.12; // ~.3 → ~.75
-      this.buildSeason("varsity", year, idx, strength, pool, rng);
+      // The newest season is left mid-flight, with its last few fixtures
+      // still unplayed. Every season used to be complete, which meant the
+      // demo could never render the state the dashboard spends most of its
+      // life in — a live season, with a next match and a schedule that is
+      // half results and half fixtures.
+      const inProgress = idx === SEASON_START_YEARS.length - 1;
+      this.buildSeason("varsity", year, idx, strength, pool, rng, inProgress);
       // JV squads only listed on MaxPreps from 2018 on (mirrors reality
       // that JV history is shallower).
-      if (year >= 18) this.buildSeason("jv", year, idx, strength - 0.05, pool, rng);
+      if (year >= 18) this.buildSeason("jv", year, idx, strength - 0.05, pool, rng, inProgress);
     });
   }
 
@@ -125,7 +131,8 @@ class DemoDB {
     idx: number,
     strength: number,
     pool: DemoPlayer[],
-    rng: () => number
+    rng: () => number,
+    inProgress = false
   ) {
     const slug = slugOf(year);
 
@@ -162,6 +169,8 @@ class DemoDB {
     }
 
     let gid = (level === "jv" ? 100000 : 0) + year * 1000;
+    // roughly two-thirds of the way through, for a season still being played
+    const playedThrough = inProgress ? Math.ceil(opponents.length * 0.65) : opponents.length;
     opponents.forEach((opp, i) => {
       const roll = rng();
       const winP = opp.playoff ? strength - 0.15 : strength;
@@ -176,6 +185,7 @@ class DemoDB {
       } else {
         teamScore = oppScore = Math.floor(rng() * 3);
       }
+      const played = i < playedThrough;
       games.push({
         id: gid + i,
         date: dates[i],
@@ -185,9 +195,9 @@ class DemoDB {
         isConference: opp.conf,
         isPlayoff: opp.playoff,
         isTournament: false,
-        teamScore,
-        opponentScore: oppScore,
-        result,
+        teamScore: played ? teamScore : null,
+        opponentScore: played ? oppScore : null,
+        result: played ? result : null,
       });
     });
 
@@ -230,6 +240,7 @@ class DemoDB {
     const totalW = field.reduce((s, r) => s + weight(r), 0) || 1;
 
     for (const g of games) {
+      if (g.result === null) continue; // not played: no box score exists
       const perPlayer = new Map<number, Record<string, number>>();
       // distribute team goals
       for (let sc = 0; sc < (g.teamScore ?? 0); sc++) {
@@ -277,7 +288,7 @@ class DemoDB {
     // aggregate
     for (const r of roster) {
       const agg: Record<string, number> = { games_played: 0 };
-      for (const g of games) {
+      for (const g of games.filter((x) => x.result !== null)) {
         const line = gameStats.get(g.id)?.get(r.playerId);
         const roll = rng() < 0.9; // consume the rng every game to stay deterministic
         const played = line !== undefined || roll;
@@ -306,7 +317,7 @@ class DemoDB {
       confTies: conf.filter((g) => g.result === "T").length,
       goalsFor: games.reduce((s, g) => s + (g.teamScore ?? 0), 0),
       goalsAgainst: games.reduce((s, g) => s + (g.opponentScore ?? 0), 0),
-      gamesPlayed: games.length,
+      gamesPlayed: wins + losses + ties,
     };
 
     this.seasons.set(`${level}:${slug}`, { info, games, roster, gameStats });

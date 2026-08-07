@@ -37,6 +37,12 @@
   --red: #ba0513;          /* team red — hue 355deg, near-full saturation */
   --red-deep: #85040e;     /* link red on light surfaces, same hue */
   --red-wash: #f7eaeb;     /* light red tint for fills/hovers, same hue */
+  /* Large red areas (the primary panels' header bars). By day this is the
+     print red itself; the night edition restates it darker, because the
+     value that reads correctly as a 2px stroke on black glares as a
+     full-width bar. */
+  --red-fill: #ba0513;
+  --on-red-fill: #ffffff;
   --gray-chip: #e8e8e8;
 
   --texture: rgba(0, 0, 0, 0.028);   /* ruled-paper lines */
@@ -108,21 +114,32 @@
     color-scheme: dark;
 
     --paper: #0d0d0d;
-    --card: #1a1a1a;
+    --card: #1e1e1e;
     --ink: #f0f0f0;
     --ink-soft: #d0d0d0;
     --muted: #9e9e9e;
-    --hair: #2e2e2e;
-    --hair-strong: #474747;
+    /* In the day edition the hairline is DARKER than both surfaces, so a 1px
+       border draws the card's edge on its own. At night it has to be lighter
+       than both instead, and #2e2e2e only reached 1.28:1 against the card —
+       card edges effectively vanished and the whole panel system flattened
+       into one field. Lifted until the border reads at a glance. */
+    --hair: #3d3d3d;
+    --hair-strong: #565656;
     /* same 355deg hue as the print red, lifted for a dark surface */
     --red: #f74f5c;
     --red-deep: #ff858e;    /* links need to sit brighter on dark */
     --red-wash: #2b1316;
-    --gray-chip: #272727;
+    --gray-chip: #3a3a3a;
 
     --texture: rgba(255, 255, 255, 0.022);
-    --row-hover: #232323;
+    --row-hover: #292929;
     --scroll-shadow: rgba(0, 0, 0, 0.5);
+
+    /* Large red fills need their own value at night. --red is tuned for type
+       and 2px strokes; across a full-width header bar that same value is the
+       brightest object on a near-black page. */
+    --red-fill: #c9202c;
+    --on-red-fill: #ffffff;
 
     --mast-bg: #000000;
     --mast-fg: #f7f7f7;
@@ -157,7 +174,8 @@
     --on-win: #1a0f0e;   /* dark type on the brighter dark-mode fills */
     --on-loss: #0d0d0d;
     --on-tie: #0d0d0d;
-    --on-red-dim: #3d1a1e;
+    /* secondary type on --red-fill, which is dark in both editions */
+    --on-red-dim: #ffc5c9;
 
     --focus: #ff858e;
     --focus-halo: #0d0d0d;
@@ -218,8 +236,8 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   box-shadow: 0 0 0 2px var(--mast-bg);
 }
 .card.ruled .card-head .head-link:focus-visible {
-  outline-color: var(--on-win);
-  box-shadow: 0 0 0 2px var(--on-win);
+  outline-color: var(--on-red-fill);
+  box-shadow: 0 0 0 2px var(--on-red-fill);
 }
 
 .skip-link {
@@ -358,27 +376,28 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   content: "";
   display: block;
   height: 6px;
-  background: var(--red);
+  background: var(--red-fill);
   border-radius: 11px 11px 0 0;
 }
 /* when a primary card has a header, the header IS the red bar */
 .card.ruled:has(.card-head)::before { display: none; }
 .card.ruled .card-head {
-  background: var(--red);
+  background: var(--red-fill);
   padding: 9px 18px;
   align-items: center;
   border-radius: 11px 11px 0 0;
 }
-.card.ruled .card-head h2 { color: var(--on-win); }
+.card.ruled .card-head h2 { color: var(--on-red-fill); }
 .card.ruled .card-head .note { color: var(--on-red-dim); }
-.card.ruled .card-head .head-link { color: var(--on-win); text-decoration: underline; }
+.card.ruled .card-head .head-link { color: var(--on-red-fill); text-decoration: underline; }
 .card.ruled .card-head .head-link:hover { color: var(--on-red-dim); }
 
 .card-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
+  flex-wrap: wrap;
   padding: 16px 20px 0;
 }
 .card-head h2 {
@@ -413,13 +432,21 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 14px;
 }
+/* The value block grows into the free space so the `t-sub` footnotes line up
+   along the bottom of the row even when one tile shrinks its value to fit a
+   long string (the all-time record). Without this the row sat on four
+   different baselines. */
 .tile {
   background: var(--card);
   border: 1px solid var(--hair);
   border-radius: 10px;
   padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
 }
-.tile .t-label {
+/* The micro-label is a type style in its own right, not a part of the tile —
+   the record card's "Overall record" and "Last 6" captions use it too. */
+.t-label {
   font-family: var(--font-mono);
   font-size: 0.64rem;
   font-weight: 600;
@@ -432,16 +459,26 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   font-size: 1.9rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin-top: 4px;
+  /* `auto` takes the row's slack so the values and their footnotes bottom-
+     align across tiles even when one shrinks to fit a long record; the
+     padding keeps the gap under the label when a tile has no slack left. */
+  margin-top: auto;
+  padding-top: 4px;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 .tile .t-value .unit { font-size: 1rem; color: var(--muted); font-weight: 500; }
 .tile .t-sub { font-size: 0.74rem; color: var(--muted); margin-top: 3px; }
 .tile.accent { border-top: 3px solid var(--red); }
+/* The inverse tile is the one highlighted tile in a row. By day the fill
+   alone carries it — a black block among white cards. At night there is no
+   luminance step left to spend (#2c2c2c on a #1e1e1e card measured 1.25:1,
+   so the "highlighted" tile read as the quietest one), so the emphasis is
+   restated in hue: a red top edge that survives both editions. */
 .tile.inverse {
   background: var(--tile-invert-bg);
   border-color: var(--tile-invert-bg);
+  border-top: 3px solid var(--red);
   color: var(--tile-invert-fg);
 }
 .tile.inverse .t-label { color: var(--tile-invert-dim); }
@@ -449,6 +486,49 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 .tile.inverse .t-value { color: var(--tile-invert-fg); }
 .tile.inverse .t-value .unit { color: var(--tile-invert-dim); }
 .tile.inverse .t-value .red { color: var(--tile-invert-accent); }
+
+/* ------------------------------------------------------- record card */
+
+.record-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  align-items: center;
+  padding-top: 18px;
+}
+.record-value {
+  font-family: var(--font-mono);
+  font-size: 3.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.record-facts {
+  border-left: 1px solid var(--hair);
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+.record-facts .badge { margin-right: 8px; }
+.record-facts strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.record-facts .fact-tail { color: var(--muted); margin: 0 0.28em 0 0.32em; }
+.record-form { margin-left: auto; text-align: right; }
+.record-form .form-dots { justify-content: flex-end; }
+.record-form .t-label { margin-bottom: 6px; }
+
+@media (max-width: 620px) {
+  /* Once the row wraps to a column, `margin-left: auto` and the right
+     alignment leave the form strip hugging the right edge while everything
+     above it is flush left. Rejoin the left margin. */
+  .record-card { gap: 16px; }
+  .record-facts { border-left: none; padding-left: 0; }
+  .record-form { margin-left: 0; text-align: left; }
+  .record-form .form-dots { justify-content: flex-start; }
+  .record-value { font-size: 2.6rem; }
+}
 
 /* -------------------------------------------------------- form strip */
 
@@ -532,9 +612,77 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap;
 }
 .data-table th.num { text-align: right; }
 .data-table .strong { font-weight: 700; }
+.data-table .cell-result { white-space: nowrap; }
+
+/* A six-column table stretched across a 1180px shell distributes its slack
+   evenly, which opened ~240px of dead space between a row's date and its
+   opponent — the eye had to travel the width of the card to read one row.
+   The name column absorbs all of it instead, so the numbers sit next to the
+   thing they describe. */
+.data-table .col-grow { width: 100%; }
+
+/* Table cells are the one place a link has to announce itself without color
+   — the name is already bold ink. A hairline underline reads as "link" and
+   goes solid red on hover. */
+.data-table a {
+  text-decoration: underline;
+  text-decoration-color: var(--hair-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.data-table a:hover { text-decoration-color: var(--red); }
+
+/* Column key: what SH/SOG/GWG actually mean. This lived only in `title`
+   tooltips, which do nothing on a touch screen. */
+.col-key {
+  margin-top: 12px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.col-key summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink-soft);
+  width: fit-content;
+}
+.col-key dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 8px 0 0;
+}
+.col-key dt {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.col-key dd { margin: 0; }
+
+/* The break between played and upcoming: a full-width rule with a caption,
+   the one structural division a schedule actually needs. */
+.data-table .row-divider td {
+  padding: 16px 10px 7px;
+  border-bottom: 2px solid var(--red);
+}
+.data-table .row-divider:hover td { background: transparent; }
+.data-table .row-divider span {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--red-deep);
+}
+
+/* Badge sitting inline after an opponent name. */
+.badge.tag-inline { margin-left: 8px; vertical-align: 1px; }
+
+/* Section caption above a bare tile row. */
+.row-label { margin-bottom: -4px; }
 
 /* Horizontally scrollable wrapper. The paired gradients only render when
    there is actually overflow on that side (background-attachment: local),
@@ -609,23 +757,43 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 
 /* -------------------------------------------------------- match rows */
 
+/* The date column sizes to its content rather than to a fixed 58px: a long
+   date ("Wed, Sep 10") measures ~74px in the mono face and used to wrap
+   mid-string into "Wed, Sep / 10". max-content keeps every row's date on one
+   line and still lets the opponent take all the slack. */
 .match-row {
   display: grid;
-  grid-template-columns: 58px 1fr auto;
+  grid-template-columns: minmax(78px, max-content) 1fr auto;
   gap: 12px;
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid var(--hair);
 }
 .match-row:last-child { border-bottom: none; }
+/* rules the "what's after that" list off from the featured fixture above it */
+.match-list:not(:empty) {
+  margin-top: 14px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hair);
+}
 .match-row .m-date {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   color: var(--muted);
   line-height: 1.35;
+  white-space: nowrap;
 }
 .match-row .m-opp { font-weight: 700; font-size: 0.86rem; }
 .match-row .m-meta { font-size: 0.73rem; color: var(--muted); margin-top: 1px; }
+/* Kickoff time sits where a played match shows its score, so the upcoming
+   rows and the featured result above them share one column rhythm. */
+.match-row .m-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .match-row .m-score {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -634,6 +802,46 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ------------------------------------------------------- leaderboard */
+
+/* The whole row is the link, not just the name: the name alone was a 19px
+   tap target, and these are the most-tapped elements on the Overview. */
+.leader-row {
+  display: block;
+  padding: 7px 0;
+  border-radius: 6px;
+}
+.leader-row:hover { color: inherit; }
+.leader-row:hover .leader-name { color: var(--red); }
+.leader-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+.leader-name { font-weight: 700; font-size: 0.84rem; flex: 1; }
+.leader-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.leader-bar {
+  display: block;
+  height: 5px;
+  background: var(--gray-chip);
+  border-radius: 99px;
+  margin-left: 35px;
+  overflow: hidden;
+}
+.leader-bar span {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  border-radius: 99px;
 }
 
 /* ------------------------------------------------------------ badges */
@@ -711,6 +919,7 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
 
 @media (max-width: 920px) {
   .grid-2, .grid-31 { grid-template-columns: 1fr; }
+
   .page-head h1 { font-size: 1.7rem; }
   .mast-nav {
     margin-left: 0;
@@ -755,6 +964,16 @@ svg g[tabindex]:focus-visible { box-shadow: none; outline-offset: 1px; }
   /* comfortable thumb targets on the controls people hit every visit */
   .seg a, .seg button { min-height: 44px; padding: 10px 18px; }
   .select-pill { min-height: 44px; }
+
+  /* Card-head notes are desktop asides — a caption on the panel's method, or
+     a hover hint ("click a column…") that describes an interaction a phone
+     doesn't have. Wrapped beside a two-line title in a red bar they just
+     crowd it, so they drop out. `.note` that is also a link stays: those are
+     navigation, not commentary. */
+  .card-head .note:not(.head-link) { display: none; }
+
+  /* the one link that lives in a card header needs a thumb-sized box */
+  .card-head .head-link { padding: 6px 0; }
 }
 
 /* Date cell swaps to its compact form only when space is short. */

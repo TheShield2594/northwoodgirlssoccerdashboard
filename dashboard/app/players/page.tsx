@@ -1,6 +1,8 @@
 import Link from "next/link";
+import ColumnKey from "@/components/ColumnKey";
 import Controls from "@/components/Controls";
 import DemoBanner from "@/components/DemoBanner";
+import EmptySeason from "@/components/EmptySeason";
 import { getSeasonBundle, listSeasons } from "@/lib/data";
 import { isGoalkeeper, resolveSelection } from "@/lib/derive";
 import { levelLabel, withParams } from "@/lib/format";
@@ -9,21 +11,21 @@ import type { RosterPlayer } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 /** `optional` columns drop out below 620px so G/A/PTS stay on screen. */
-type Col = { key: string; label: string; title: string; optional?: boolean };
+type Col = { key: string; label: string; optional?: boolean };
 
 const FIELD_COLS: Col[] = [
-  { key: "games_played", label: "GP", title: "Games played" },
-  { key: "goals", label: "G", title: "Goals" },
-  { key: "assists", label: "A", title: "Assists" },
-  { key: "points", label: "PTS", title: "Points (2G + A)" },
-  { key: "shots", label: "SH", title: "Shots", optional: true },
-  { key: "shots_on_goal", label: "SOG", title: "Shots on goal", optional: true },
+  { key: "games_played", label: "GP" },
+  { key: "goals", label: "G" },
+  { key: "assists", label: "A" },
+  { key: "points", label: "PTS" },
+  { key: "shots", label: "SH", optional: true },
+  { key: "shots_on_goal", label: "SOG", optional: true },
 ];
 const GK_COLS: Col[] = [
-  { key: "games_played", label: "GP", title: "Games played" },
-  { key: "saves", label: "SV", title: "Saves" },
-  { key: "goals_against", label: "GA", title: "Goals against" },
-  { key: "shutouts", label: "SO", title: "Shutouts" },
+  { key: "games_played", label: "GP" },
+  { key: "saves", label: "SV" },
+  { key: "goals_against", label: "GA" },
+  { key: "shutouts", label: "SO" },
 ];
 
 export default async function PlayersPage({
@@ -34,7 +36,11 @@ export default async function PlayersPage({
   const { seasons, demo } = await listSeasons();
   const { level, season } = resolveSelection(seasons, searchParams);
   const { bundle } = await getSeasonBundle(level, season);
-  if (!bundle) return <p>No data for this season.</p>;
+  if (!bundle) {
+    return (
+      <EmptySeason demo={demo} seasons={seasons} level={level} season={season} title="Squad &amp; Stats" />
+    );
+  }
 
   const isKeeper = (p: RosterPlayer) => isGoalkeeper(p.position, p.stats);
 
@@ -48,11 +54,11 @@ export default async function PlayersPage({
       <thead>
         <tr>
           <th style={{ width: 40 }}>#</th>
-          <th>Player</th>
+          <th className="col-grow">Player</th>
           <th className="col-optional">Gr</th>
           <th className="col-optional">Pos</th>
           {cols.map((c) => (
-            <th key={c.key} className={`num ${c.optional ? "col-optional" : ""}`} title={c.title}>{c.label}</th>
+            <th key={c.key} className={`num ${c.optional ? "col-optional" : ""}`}>{c.label}</th>
           ))}
         </tr>
       </thead>
@@ -88,7 +94,7 @@ export default async function PlayersPage({
             {bundle.season.label} · {levelLabel(level)} · {bundle.roster.length} players
           </span>
           <h1>Squad &amp; Stats</h1>
-          <p className="sub">Season totals from MaxPreps. Click a player for their game log and career.</p>
+          <p className="sub">Season totals from MaxPreps.</p>
         </div>
         <Controls seasons={seasons} level={level} season={season} />
       </div>
@@ -119,13 +125,19 @@ export default async function PlayersPage({
             <h2>Outfield</h2>
             <span className="note">sorted by points (2×G + A)</span>
           </div>
-          <div className="card-body table-scroll">{renderTable(field, FIELD_COLS)}</div>
+          <div className="card-body">
+            <div className="table-scroll">{renderTable(field, FIELD_COLS)}</div>
+            <ColumnKey keys={FIELD_COLS.map((c) => c.key)} />
+          </div>
         </section>
 
         {keepers.length > 0 && (
           <section className="card">
             <div className="card-head"><h2>Goalkeepers</h2></div>
-            <div className="card-body table-scroll">{renderTable(keepers, GK_COLS)}</div>
+            <div className="card-body">
+              <div className="table-scroll">{renderTable(keepers, GK_COLS)}</div>
+              <ColumnKey keys={GK_COLS.map((c) => c.key)} />
+            </div>
           </section>
         )}
       </div>

@@ -10,7 +10,7 @@
  * true pixel size at every breakpoint.
  */
 import { useState } from "react";
-import { labelStride, useChartWidth } from "./useChartWidth";
+import { labelStride, niceScale, tickAnchor, useChartWidth } from "./useChartWidth";
 
 export interface TrendPoint {
   label: string; // x tick label, e.g. "8/16" or "'21"
@@ -46,7 +46,8 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
 
   const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
-  const maxY = Math.max(2, ...points.map((p) => Math.max(p.a, p.b)));
+  const scale = niceScale(Math.max(2, ...points.map((p) => Math.max(p.a, p.b))));
+  const maxY = scale.max;
   const x = (i: number) =>
     PAD.left + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
   const y = (v: number) => PAD.top + innerH - (v / maxY) * innerH;
@@ -59,7 +60,7 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
     ` L${x(points.length - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z`;
 
   const step = labelStride(points.length, innerW, narrow ? 38 : 46);
-  const yTicks = maxY <= 6 ? Array.from({ length: maxY + 1 }, (_, i) => i) : [0, Math.round(maxY / 2), maxY];
+  const yTicks = scale.ticks;
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -117,7 +118,7 @@ export default function DualTrendChart({ points, aLabel, bLabel, ariaLabel }: Pr
         {/* x ticks */}
         {points.map((p, i) =>
           i % step === 0 ? (
-            <text key={i} x={x(i)} y={H - 8} fontSize={10} fill="var(--muted)" textAnchor="middle" fontFamily="var(--font-mono)">
+            <text key={i} x={x(i)} y={H - 8} fontSize={10} fill="var(--muted)" textAnchor={tickAnchor(i, points.length)} fontFamily="var(--font-mono)">
               {p.label}
             </text>
           ) : null

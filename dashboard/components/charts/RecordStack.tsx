@@ -9,7 +9,7 @@
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { labelStride, useChartWidth } from "./useChartWidth";
+import { labelStride, niceScale, tickAnchor, useChartWidth } from "./useChartWidth";
 
 export interface SeasonColumn {
   label: string;      // "'25"
@@ -33,13 +33,14 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
 
   const innerW = Math.max(40, W - PAD.left - PAD.right);
   const innerH = H - PAD.top - PAD.bottom;
-  const maxTotal = Math.max(...columns.map((c) => c.wins + c.losses + c.ties), 1);
+  const yScale = niceScale(Math.max(...columns.map((c) => c.wins + c.losses + c.ties), 1));
+  const maxTotal = yScale.max;
   const slot = innerW / columns.length;
   const barW = Math.min(34, Math.max(6, slot - 8));
   const x = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
   const hScale = innerH / maxTotal;
 
-  const yTicks = [...new Set([0, Math.round(maxTotal / 2), maxTotal])];
+  const yTicks = yScale.ticks;
   // With 17 seasons on a phone, every other label is all that fits.
   const step = labelStride(columns.length, innerW, narrow ? 26 : 34);
   const hp = hover !== null ? columns[hover] : null;
@@ -58,6 +59,12 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
           const segs: { v: number; color: string }[] = [
             { v: c.wins, color: "var(--win)" },
             { v: c.ties, color: "var(--tie)" },
+            // Losses stay on --loss. Softening them to a gray (so the palette's
+            // heaviest value doesn't land on the worst outcome) puts them next
+            // to --tie, which is already gray: two of the three categories stop
+            // being tellable apart, and any gray light enough to read as
+            // "secondary" drops under 3:1 against the card. Categorical
+            // separation wins over the tonal balance here.
             { v: c.losses, color: "var(--loss)" },
           ].filter((s) => s.v > 0);
           let yCursor = H - PAD.bottom;
@@ -89,7 +96,7 @@ export default function RecordStack({ columns, ariaLabel }: { columns: SeasonCol
               })}
               {(i % step === 0 || hover === i) && (
                 <text x={PAD.left + i * slot + slot / 2} y={H - 7} fontSize={10}
-                      fill={hover === i ? "var(--ink)" : "var(--muted)"} textAnchor="middle" fontFamily="var(--font-mono)">
+                      fill={hover === i ? "var(--ink)" : "var(--muted)"} textAnchor={tickAnchor(i, columns.length)} fontFamily="var(--font-mono)">
                   {c.label}
                 </text>
               )}

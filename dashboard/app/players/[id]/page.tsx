@@ -1,12 +1,16 @@
 import Link from "next/link";
+import ColumnKey from "@/components/ColumnKey";
 import DemoBanner from "@/components/DemoBanner";
 import Sparkline from "@/components/charts/Sparkline";
 import { getPlayerDetail, listSeasons } from "@/lib/data";
 import { isGoalkeeper, resolveSelection } from "@/lib/derive";
 import { fmtDateYear, levelLabel, withParams } from "@/lib/format";
-import { STAT_LABELS } from "@/lib/types";
+import { STAT_FULL_NAMES, STAT_LABELS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/** How many of a player's most recent stat lines the game log shows. */
+const LOG_LIMIT = 30;
 
 export default async function PlayerPage({
   params,
@@ -28,7 +32,24 @@ export default async function PlayerPage({
     return (
       <>
         <DemoBanner demo={demo} />
-        <p>Player not found.</p>
+        <div className="page-head">
+          <div>
+            <span className="kicker">Squad</span>
+            <h1>Player not found</h1>
+          </div>
+          <Link href={withParams("/players", level, season)} className="badge outline" style={{ padding: "8px 14px" }}>
+            ← All players
+          </Link>
+        </div>
+        <section className="card ruled">
+          <div className="card-body">
+            <p className="sub" style={{ marginTop: 0 }}>
+              No player with that id is in the database. They may have been on a
+              season that hasn&apos;t been scraped yet — the full squad list is one
+              click away.
+            </p>
+          </div>
+        </section>
       </>
     );
   }
@@ -98,13 +119,17 @@ export default async function PlayerPage({
       </div>
 
       <div className="stack">
-        {/* career tiles */}
+        {/* Career tiles. The season count is a fact about the whole row, so
+            it's stated once above it rather than repeated in all four subs. */}
+        <div className="t-label row-label">
+          Career totals · {player.seasons.length} season
+          {player.seasons.length === 1 ? "" : "s"} on record
+        </div>
         <div className="tile-row">
           {heroKeys.map((k, i) => (
             <div key={k} className={`tile ${i === 1 ? "accent" : ""}`}>
-              <div className="t-label">Career {STAT_LABELS[k] ?? k.replace(/_/g, " ")}</div>
+              <div className="t-label">{STAT_FULL_NAMES[k] ?? k.replace(/_/g, " ")}</div>
               <div className="t-value">{careerStats[k] ?? 0}</div>
-              <div className="t-sub">{player.seasons.length} season{player.seasons.length === 1 ? "" : "s"} on record</div>
             </div>
           ))}
           {goalsBySeason.length > 1 && (
@@ -120,11 +145,12 @@ export default async function PlayerPage({
         {/* season by season */}
         <section className="card ruled">
           <div className="card-head"><h2>Season by season</h2></div>
-          <div className="card-body table-scroll">
+          <div className="card-body">
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Season</th>
+                  <th className="col-grow">Season</th>
                   <th>Level</th>
                   <th className="col-optional">Gr</th>
                   <th className="col-optional">Pos</th>
@@ -153,6 +179,8 @@ export default async function PlayerPage({
                 ))}
               </tbody>
             </table>
+            </div>
+            <ColumnKey keys={seasonCols.map((c) => c.key)} />
           </div>
         </section>
 
@@ -161,14 +189,21 @@ export default async function PlayerPage({
           <section className="card">
             <div className="card-head">
               <h2>Game log</h2>
-              <span className="note">games with recorded stats</span>
+              {/* The list is capped; saying so beats a silent truncation that
+                  reads as "this is everything". */}
+              <span className="note">
+                {player.gameLog.length > LOG_LIMIT
+                  ? `most recent ${LOG_LIMIT} of ${player.gameLog.length} games with recorded stats`
+                  : "games with recorded stats"}
+              </span>
             </div>
-            <div className="card-body table-scroll">
+            <div className="card-body">
+              <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Opponent</th>
+                    <th className="col-grow">Opponent</th>
                     <th>Result</th>
                     {logKeys.map((k) => (
                       <th key={k} className="num">{STAT_LABELS[k] ?? k}</th>
@@ -176,11 +211,11 @@ export default async function PlayerPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {player.gameLog.slice(-30).map((g, i) => (
+                  {player.gameLog.slice(-LOG_LIMIT).map((g, i) => (
                     <tr key={i}>
                       <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "0.78rem" }}>{fmtDateYear(g.date)}</td>
                       <td className="strong">{g.opponent}</td>
-                      <td>
+                      <td className="cell-result">
                         {g.result && <span className={`chip ${g.result}`}>{g.result}</span>}{" "}
                         <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.78rem", color: "var(--muted)" }}>
                           {g.teamScore !== null ? `${g.teamScore}–${g.opponentScore}` : ""}
@@ -193,6 +228,8 @@ export default async function PlayerPage({
                   ))}
                 </tbody>
               </table>
+              </div>
+              <ColumnKey keys={logKeys} />
             </div>
           </section>
         )}

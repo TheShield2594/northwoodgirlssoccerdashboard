@@ -6,6 +6,11 @@ import { withParams } from "@/lib/format";
  * Leader list: jersey chip, name, value, and a proportional red bar.
  * Values are directly labeled so the bar is reinforcement, not the only
  * encoding.
+ *
+ * The whole row is the link — the name on its own was a 19px tap target.
+ * The bars only appear when there are at least two players to compare: with
+ * one entry the bar is `value / value`, permanently full, and encodes
+ * nothing.
  */
 export default function LeaderBoard({
   players,
@@ -31,41 +36,29 @@ export default function LeaderBoard({
     return <p style={{ color: "var(--muted)", fontSize: "0.78rem", margin: "6px 0" }}>No {unit} recorded yet.</p>;
   }
   const top = ranked[0].stats[statKey] ?? 1;
+  const showBars = ranked.length > 1;
 
   return (
     <div>
       {ranked.map((p) => (
-        <div key={p.playerId} style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4 }}>
+        <Link
+          key={p.playerId}
+          className="leader-row"
+          href={withParams(`/players/${p.playerId}`, level, season)}
+        >
+          <span className="leader-head">
             <span className="jersey">{p.jersey ?? "–"}</span>
-            <Link
-              href={withParams(`/players/${p.playerId}`, level, season)}
-              style={{ fontWeight: 700, fontSize: "0.84rem", flex: 1 }}
-            >
-              {p.name}
-            </Link>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                color: "var(--ink-soft)",
-              }}
-            >
+            <span className="leader-name">{p.name}</span>
+            <span className="leader-value">
               {p.stats[statKey]} {unit}
             </span>
-          </div>
-          <div style={{ height: 5, background: "var(--gray-chip)", borderRadius: 99, marginLeft: 35, overflow: "hidden" }}>
-            <div
-              style={{
-                height: "100%",
-                width: `${((p.stats[statKey] ?? 0) / top) * 100}%`,
-                background: "linear-gradient(90deg, var(--red), var(--red-deep))",
-                borderRadius: 99,
-              }}
-            />
-          </div>
-        </div>
+          </span>
+          {showBars && (
+            <span className="leader-bar" aria-hidden="true">
+              <span style={{ width: `${((p.stats[statKey] ?? 0) / top) * 100}%` }} />
+            </span>
+          )}
+        </Link>
       ))}
     </div>
   );
