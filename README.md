@@ -221,6 +221,45 @@ It's season-scoped and refuses to prune a roster it parsed as empty, so a
 failed fetch can't wipe history. Check the run's warnings first — pruning
 against a bad parse just replaces stale wrong rows with fresh wrong ones.
 
+## Knowing when a scrape breaks
+
+Scraping degrades silently. A parser that stops matching doesn't crash — it
+returns zero rows, the run reports success, and the dashboard quietly goes
+blank until someone happens to look. That is how player stats went missing
+here for weeks.
+
+So every run now ends with a summary, printed to the log and posted to a
+webhook when something is wrong:
+
+```
+northwood scrape: 2 problem(s) across 3 season/level target(s)
+
+ok   varsity  26-27  games   4 (flight)  roster   0 (flight)  stats   0 (none)   box 0
+!!   varsity  25-26  games  18 (flight)  roster  22 (flight)  stats   0 (none)   box 3
+ok   jv       25-26  games  16 (flight)  roster  19 (flight)  stats  19 (flight) box 1
+
+REGRESSION varsity 25-26 stat lines: had 22, parsed 0 this run
+varsity 25-26: stats page fetched but 0 stat lines parsed
+```
+
+The bracketed layer is which parser hit — `flight`/`nextdata` are the
+embedded JSON, and `dom!` means every JSON layer missed and the rows are
+inferred from markup.
+
+Set `SCRAPE_WEBHOOK_URL` to a Discord or Slack incoming webhook to get these
+pushed. Two rules keep it worth reading:
+
+- **Only bad runs are sent.** A message that arrives every morning stops
+  being read by the time it matters. `SCRAPE_WEBHOOK_ALWAYS=1` overrides
+  this if you want the clean ones too.
+- **Only real losses count as regressions.** A season that had 22 stat lines
+  and now parses 0 alarms; a season that never had any stays quiet, because
+  a schedule published in July legitimately has none until the first whistle.
+
+A webhook that is down is logged and ignored — the data is already committed
+by the time the summary is sent, and a notification failure must never take
+a successful scrape with it.
+
 ## Is what I'm looking at real?
 
 The dashboard serves a **fictional demo dataset** whenever the `games` table

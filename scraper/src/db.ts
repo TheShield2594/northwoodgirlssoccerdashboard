@@ -264,3 +264,33 @@ export async function saveBoxScore(gameId: number, lines: ParsedStatLine[]): Pro
     client.release();
   }
 }
+
+/** What a season already holds. Compared against what a run parses, this is
+ *  what separates "this season has no stats" from "we just lost the stats we
+ *  had" — the difference between a quiet run and an alert. */
+export interface SeasonCounts {
+  games: number;
+  rosterEntries: number;
+  statLines: number;
+}
+
+/** Counts for a season/level that may not exist yet — all zeros if not. */
+export async function seasonCounts(seasonSlug: string, level: string): Promise<SeasonCounts> {
+  const res = await pool.query(
+    `SELECT
+       (SELECT count(*) FROM games g WHERE g.season_id = s.id) AS games,
+       (SELECT count(*) FROM player_seasons ps WHERE ps.season_id = s.id) AS roster_entries,
+       (SELECT count(DISTINCT pss.player_season_id)
+          FROM player_season_stats pss
+          JOIN player_seasons ps ON ps.id = pss.player_season_id
+         WHERE ps.season_id = s.id) AS stat_lines
+     FROM seasons s WHERE s.season_slug = $1 AND s.level = $2`,
+    [seasonSlug, level]
+  );
+  const row = res.rows[0];
+  return {
+    games: Number(row?.games ?? 0),
+    rosterEntries: Number(row?.roster_entries ?? 0),
+    statLines: Number(row?.stat_lines ?? 0),
+  };
+}

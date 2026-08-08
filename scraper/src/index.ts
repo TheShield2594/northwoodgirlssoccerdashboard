@@ -26,9 +26,11 @@ import {
   saveSeasonStats,
   upsertGame,
   pruneSeason,
+  seasonCounts,
   upsertRosterEntry,
   upsertSeason,
 } from "./db.js";
+import { SeasonReport, newSeasonReport, postSummary, summarize } from "./report.js";
 
 const BACKFILL = process.argv.includes("--backfill");
 const SKIP_BOX_SCORES = process.argv.includes("--no-box-scores");
@@ -88,15 +90,18 @@ function targetFromConfig(level: TeamLevel, seasonSlug: string): ScrapeTarget {
   };
 }
 
-async function scrapeSeason(target: ScrapeTarget): Promise<void> {
+async function scrapeSeason(target: ScrapeTarget): Promise<SeasonReport> {
   const { level, seasonSlug } = target;
+  // Read before writing: comparing this against what the run parses is what
+  // tells a season that never had stats from one that just lost them.
+  const report = newSeasonReport(level, seasonSlug, await seasonCounts(seasonSlug, level));
   const schedUrl = target.schedule;
   const schedHtml = await fetchHtml(schedUrl);
   if (!schedHtml) {
     console.log(
       `[scrape] ${level} ${seasonSlug}: no schedule page at ${schedUrl} (season/level likely doesn't exist), skipping`
     );
-    return;
+    return report;
   }
 
   const { games, source } = parseSchedulePage(schedHtml, seasonSlug);
@@ -104,15 +109,21 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
     console.log(
       `[scrape] ${level} ${seasonSlug}: 0 games parsed — run \`npm run verify\` against this page to re-aim the parser`
     );
-    return;
+    report.problems.push("schedule page fetched but 0 games parsed");
+    return report;
   }
   console.log(`[scrape] ${level} ${seasonSlug}: ${games.length} games via ${source} (${schedUrl})`);
   warnIfGuessing(`${level} ${seasonSlug} schedule`, source);
+  report.games = games.length;
+  report.gamesPlayed = games.filter((g) => g.result !== null).length;
+  report.sources.schedule = source;
+  if (source === "dom") report.problems.push("schedule fell back to the DOM — rows may be wrong");
   const withTimes = games.filter((g) => g.timeText !== null).length;
   if (withTimes === 0) {
     console.warn(
       `[scrape]   WARNING: no kickoff times on any of the ${games.length} games — the page's time field has moved; run \`npm run verify\``
     );
+    report.problems.push(`no kickoff times on any of the ${games.length} games`);
   }
 
   const seasonId = await upsertSeason(seasonSlug, seasonLabel(seasonSlug), level);
@@ -131,6 +142,7 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
           const box = parseBoxScorePage(boxHtml, TEAM_NAME_HINT);
           if (box.lines.length > 0) {
             await saveBoxScore(gameId, box.lines);
+            report.boxScores++;
             console.log(`[scrape]   box score: ${g.opponent} (${box.lines.length} players, via ${box.source})`);
           }
         }
@@ -152,6 +164,7 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
   const rosterHtml = await fetchHtml(rosterUrlForSeason);
   if (!rosterHtml) {
     console.warn(`[scrape] ${level} ${seasonSlug}: roster page unreachable (${rosterUrlForSeason})`);
+    report.problems.push("roster page unreachable");
   } else {
     // Isolated: a roster failure must not cost this season its stats too.
     try {
@@ -160,6 +173,9 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
         keptPlayerSeasonIds.push(await upsertRosterEntry(seasonId, entry));
       }
       const expected = roster.expectedCount;
+      report.rosterEntries = roster.entries.length;
+      report.rosterExpected = expected;
+      report.sources.roster = roster.source;
       console.log(
         `[scrape] ${level} ${seasonSlug}: ${roster.entries.length} roster entries via ${roster.source}` +
           (expected !== null ? ` (page reports ${expected} athletes)` : "")
@@ -175,12 +191,18 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
             (expected !== null ? ` while the page reports ${expected} athletes` : "") +
             ` — the parser needs re-aiming; run \`npm run inspect\` on this page`
         );
+        report.problems.push(
+          `roster page fetched but 0 players parsed` +
+            (expected !== null ? ` while the page reports ${expected} athletes` : "")
+        );
       } else if (expected !== null && roster.entries.length !== expected) {
         console.warn(
           `[scrape]   WARNING: parsed ${roster.entries.length} players but the page reports ${expected}`
         );
+        report.problems.push(`parsed ${roster.entries.length} players but the page reports ${expected}`);
       }
       warnIfGuessing(`${level} ${seasonSlug} roster`, roster.source);
+      if (roster.source === "dom") report.problems.push("roster fell back to the DOM — rows may be wrong");
       // Only a roster we actually believe may drive a prune. Parsing zero
       // players off a page that claims some is a failure, not an empty squad.
       rosterOk = !(roster.entries.length === 0 && expected !== 0);
@@ -189,6 +211,7 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
         `[scrape] ${level} ${seasonSlug}: roster failed:`,
         err instanceof Error ? err.message : err
       );
+      report.problems.push(`roster threw: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -196,14 +219,18 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
   const statsHtml = await fetchHtml(target.stats);
   if (!statsHtml) {
     console.warn(`[scrape] ${level} ${seasonSlug}: stats page unreachable (${target.stats})`);
+    report.problems.push("stats page unreachable");
   } else {
     try {
       const stats = parseStatsPage(statsHtml);
       if (stats.lines.length > 0) {
         keptPlayerSeasonIds.push(...(await saveSeasonStats(seasonId, stats.lines)));
       }
+      report.statLines = stats.lines.length;
+      report.sources.stats = stats.source;
       if (stats.unmappedHeaders.length > 0) {
         console.log(`[scrape]   unmapped stat columns (add to STAT_COLUMN_MAP?): ${stats.unmappedHeaders.join(", ")}`);
+        report.problems.push(`unmapped stat columns: ${stats.unmappedHeaders.join(", ")}`);
       }
       console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
       warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
@@ -216,13 +243,22 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
           `[scrape]   ERROR: stats page fetched but 0 stat lines parsed (${target.stats}) — ` +
             `if this season has stats on MaxPreps the parser needs re-aiming; run \`npm run inspect\` on this page`
         );
+        // Only worth alerting on when the season could plausibly have stats:
+        // matches actually played, and a squad to credit them to. A schedule
+        // published in July has neither, and would otherwise alert every day
+        // until the first whistle — which is how an alert stops being read.
+        if (report.gamesPlayed > 0 && report.rosterEntries > 0) {
+          report.problems.push("stats page fetched but 0 stat lines parsed");
+        }
       }
+      if (stats.source === "dom") report.problems.push("stats fell back to the DOM — rows may be wrong");
       statsOk = stats.lines.length > 0;
     } catch (err) {
       console.error(
         `[scrape] ${level} ${seasonSlug}: stats failed:`,
         err instanceof Error ? err.message : err
       );
+      report.problems.push(`stats threw: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -252,6 +288,8 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
       );
     }
   }
+
+  return report;
 }
 
 /**
@@ -302,14 +340,27 @@ async function runFullScrape(): Promise<void> {
     `[run] scraping ${targets.length} season/level target(s)` +
       `${BACKFILL ? " (backfill)" : ""}${PRUNE ? " (prune)" : ""}; current season is ${currentSeasonSlug()}`
   );
+  const reports: SeasonReport[] = [];
   for (const target of targets) {
     try {
-      await scrapeSeason(target);
+      reports.push(await scrapeSeason(target));
     } catch (err) {
       console.error(`[run] failed on ${target.level} ${target.seasonSlug}:`, err);
+      // A target that threw still belongs in the summary — a season that
+      // silently stopped appearing is the failure this is here to catch.
+      const failed = newSeasonReport(target.level, target.seasonSlug, {
+        games: 0,
+        rosterEntries: 0,
+        statLines: 0,
+      });
+      failed.problems.push(`run threw: ${err instanceof Error ? err.message : err}`);
+      reports.push(failed);
     }
   }
-  console.log("[run] done");
+
+  const summary = summarize(reports);
+  console.log(`[run] done\n${summary.text}`);
+  await postSummary(summary);
 }
 
 async function main() {

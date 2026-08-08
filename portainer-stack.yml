@@ -48,6 +48,14 @@ services:
       # HTML of every fetched page is cached here so parser fixes can be
       # re-run without re-hitting maxpreps.com (npm run reparse).
       SCRAPE_CACHE_DIR: /cache
+      # Optional: a Discord (or Slack) incoming webhook. Each run posts a
+      # summary here when something regressed — a season that had stats and
+      # now parses none, a parser that dropped to its DOM fallback. Leave it
+      # unset and the summary only goes to the container log.
+      SCRAPE_WEBHOOK_URL: ${SCRAPE_WEBHOOK_URL:-}
+      # Set to 1 to get the clean runs too. Off by default: a message that
+      # arrives every morning stops being read by the time it matters.
+      SCRAPE_WEBHOOK_ALWAYS: ${SCRAPE_WEBHOOK_ALWAYS:-}
     volumes:
       - scrapecache:/cache
     depends_on:
