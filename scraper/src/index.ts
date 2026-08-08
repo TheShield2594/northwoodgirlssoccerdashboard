@@ -194,7 +194,9 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
 
   // Season aggregate stats
   const statsHtml = await fetchHtml(target.stats);
-  if (statsHtml) {
+  if (!statsHtml) {
+    console.warn(`[scrape] ${level} ${seasonSlug}: stats page unreachable (${target.stats})`);
+  } else {
     try {
       const stats = parseStatsPage(statsHtml);
       if (stats.lines.length > 0) {
@@ -205,7 +207,17 @@ async function scrapeSeason(target: ScrapeTarget): Promise<void> {
       }
       console.log(`[scrape] ${level} ${seasonSlug}: ${stats.lines.length} stat lines via ${stats.source}`);
       warnIfGuessing(`${level} ${seasonSlug} stats`, stats.source);
-      statsOk = true;
+      // Unlike the roster, the stats page publishes no count of its own, so
+      // "no stats entered yet" and "the parser stopped matching" are the same
+      // observation from here. Treat zero as a failure: it is the one that
+      // costs data, and it is the one that leaves the dashboard blank.
+      if (stats.lines.length === 0) {
+        console.error(
+          `[scrape]   ERROR: stats page fetched but 0 stat lines parsed (${target.stats}) — ` +
+            `if this season has stats on MaxPreps the parser needs re-aiming; run \`npm run inspect\` on this page`
+        );
+      }
+      statsOk = stats.lines.length > 0;
     } catch (err) {
       console.error(
         `[scrape] ${level} ${seasonSlug}: stats failed:`,

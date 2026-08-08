@@ -93,21 +93,23 @@ export async function getSeasonBundle(
       );
       // If the stats page never parsed, fall back to summing box scores.
       const boxRes = await pool.query(
-        `SELECT gps.player_id, gps.stat_name, SUM(gps.stat_value) AS stat_value
+        `SELECT gps.player_id, gps.game_id, gps.stat_name, gps.stat_value
          FROM game_player_stats gps
          JOIN games g ON g.id = gps.game_id
-         WHERE g.season_id = $1
-         GROUP BY gps.player_id, gps.stat_name`,
+         WHERE g.season_id = $1`,
         [seasonId]
       );
 
       const statMap = new Map<number, Record<string, number>>();
-      for (const src of [boxRes.rows, statsRes.rows]) {
-        for (const r of src) {
-          const m = statMap.get(r.player_id) ?? {};
-          m[r.stat_name] = Number(r.stat_value);
-          statMap.set(r.player_id, m);
-        }
+      for (const [playerId, box] of foldBoxScores(boxRes.rows, (r) => r.player_id)) {
+        statMap.set(playerId, box);
+      }
+      // The season-stats page is authoritative where it has a value; the
+      // box-score sum only fills the stats it never supplied.
+      for (const r of statsRes.rows) {
+        const m = statMap.get(r.player_id) ?? {};
+        m[r.stat_name] = Number(r.stat_value);
+        statMap.set(r.player_id, m);
       }
 
       const roster: RosterPlayer[] = rosterRes.rows.map((r) => ({
@@ -136,7 +138,8 @@ export async function getPlayerDetail(
     const pRes = await pool.query(`SELECT id, full_name FROM players WHERE id = $1`, [playerId]);
     if (pRes.rowCount === 1) {
       const seasonsRes = await pool.query(
-        `SELECT s.season_slug, s.label, s.level, ps.id AS player_season_id,
+        `SELECT s.id AS season_id, s.season_slug, s.label, s.level,
+                ps.id AS player_season_id,
                 ps.jersey_number, ps.position, ps.grade
          FROM player_seasons ps JOIN seasons s ON s.id = ps.season_id
          WHERE ps.player_id = $1 ORDER BY s.season_slug ASC`,
@@ -157,12 +160,19 @@ export async function getPlayerDetail(
       }
 
       const logRes = await pool.query(
-        `SELECT g.game_date, g.opponent, g.result, g.team_score, g.opponent_score,
+        `SELECT g.season_id, gps.game_id,
+                g.game_date, g.opponent, g.result, g.team_score, g.opponent_score,
                 gps.stat_name, gps.stat_value
          FROM game_player_stats gps JOIN games g ON g.id = gps.game_id
          WHERE gps.player_id = $1 ORDER BY g.game_date ASC`,
         [playerId]
       );
+      // Same fallback the Players list uses: when a season's stats page never
+      // parsed, its box scores stand in. Without this the list and this page
+      // disagree — the list shows a scorer's goals while their own page reads
+      // zero across the board.
+      const boxBySeason = foldBoxScores(logRes.rows, (r) => r.season_id);
+
       const logByDate = new Map<string, PlayerDetail["gameLog"][number]>();
       for (const r of logRes.rows) {
         const key = `${toIso(r.game_date)}|${r.opponent}`;
@@ -189,7 +199,10 @@ export async function getPlayerDetail(
             jersey: r.jersey_number,
             position: r.position,
             grade: r.grade,
-            stats: statByPs.get(r.player_season_id) ?? {},
+            stats: {
+              ...(boxBySeason.get(r.season_id) ?? {}),
+              ...(statByPs.get(r.player_season_id) ?? {}),
+            },
           })),
           gameLog: [...logByDate.values()],
         },
@@ -203,6 +216,41 @@ export async function getPlayerDetail(
 }
 
 // ------------------------------------------------------------------ utils
+
+/**
+ * Sum raw per-game stat rows into one season-aggregate record per group.
+ *
+ * This is the stand-in for a season-stats page that didn't parse. Box scores
+ * carry no `games_played`, so it's derived from the number of distinct games
+ * the player actually recorded a line in — a floor, not the true GP, but a
+ * career tile reading "0 games, 14 goals" is visibly broken, and every other
+ * number here is a floor for the same reason.
+ *
+ * Rows must be raw (one per game/stat), never pre-aggregated by SQL — the
+ * game count is taken from `game_id`, which a GROUP BY would have collapsed.
+ */
+function foldBoxScores(
+  rows: any[],
+  groupBy: (row: any) => number
+): Map<number, Record<string, number>> {
+  const stats = new Map<number, Record<string, number>>();
+  const gameIds = new Map<number, Set<number>>();
+
+  for (const r of rows) {
+    const key = groupBy(r);
+    const m = stats.get(key) ?? {};
+    m[r.stat_name] = (m[r.stat_name] ?? 0) + Number(r.stat_value);
+    stats.set(key, m);
+    const games = gameIds.get(key) ?? new Set<number>();
+    games.add(r.game_id);
+    gameIds.set(key, games);
+  }
+
+  for (const [key, m] of stats) {
+    if (m.games_played === undefined) m.games_played = gameIds.get(key)!.size;
+  }
+  return stats;
+}
 
 function rowToSeason(r: any): SeasonInfo {
   return {
